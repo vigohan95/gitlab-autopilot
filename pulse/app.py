@@ -67,7 +67,7 @@ async def run_probe_round(store: Store, client: httpx.AsyncClient | None = None)
     sites = store.list_sites()
     results = await probe_many([s.url for s in sites], client=client)
     out = []
-    for site, res in zip(sites, results):
+    for site, res in zip(sites, results, strict=True):
         chk = store.record_check(site.id, res.ok, res.status_code, res.latency_ms, res.error)
         out.append({"site": site.name, **chk.__dict__})
     return out

@@ -1,0 +1,429 @@
+# Autopilot pipeline for pulse — every DevSecOps lifecycle stage is a real job.
+#
+#   plan      issue + Planner flow (outside CI)            govern    policy-check, auto-merge, audit-trail, journey-card
+#   create    Developer flow opens the MR (outside CI)     verify    test, lint, verify-staging
+#   secure    SAST, Secret Detection, Dependency Scanning, pip-audit, Container Scanning
+#   package   build-image (Container Registry), build-wheel (Package Registry)
+#   release   release-cli tag + notes                      configure deploy-staging, deploy-production, rollback
+#   monitor   scheduled monitor -> incident -> rollback
+#
+# Policy: AUTOPILOT.md. Flows/agents: .gitlab/duo/. Nothing here costs money: GitLab hosted
+# runners (free minutes) + Hugging Face free Docker Spaces.
+
+stages:
+  - test
+  - quality
+  - secure
+  - build
+  - package
+  - release
+  - deploy-staging
+  - verify-staging
+  - deploy-production
+  - monitor
+  - govern
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+    - if: $CI_PIPELINE_SOURCE == "web"
+    - if: $CI_PIPELINE_SOURCE == "api"
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml
+  - template: Jobs/Secret-Detection.gitlab-ci.yml
+  - template: Jobs/Dependency-Scanning.gitlab-ci.yml
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+variables:
+  PYTHON_IMAGE: "python:3.12-slim"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  IMAGE: "$CI_REGISTRY_IMAGE"
+  # security templates
+  SAST_EXCLUDED_PATHS: "tests, docs, .gitlab"
+  SECRET_DETECTION_HISTORIC_SCAN: "false"
+  DS_EXCLUDED_PATHS: "tests, docs"
+  CS_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+  CS_DOCKERFILE_PATH: "Dockerfile"
+  # deployment targets — set as CI/CD variables in the project (see README "Reproduce")
+  PULSE_STAGING_URL: ""
+  PULSE_PRODUCTION_URL: ""
+  HF_STAGING_SPACE: ""
+  HF_PRODUCTION_SPACE: ""
+  # rollback pipelines are started by scripts/incident.py with ROLLBACK_TO=<tag>
+  ROLLBACK_TO: ""
+  INCIDENT_IID: ""
+
+default:
+  image: $PYTHON_IMAGE
+  interruptible: true
+
+# ---------------------------------------------------------------- rule sets --
+.rules_app: &rules_app
+  - if: $ROLLBACK_TO
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "schedule"
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  - if: $CI_COMMIT_TAG
+
+.rules_main: &rules_main
+  - if: $ROLLBACK_TO
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "schedule"
+    when: never
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.rules_deploy: &rules_deploy
+  - if: $CI_PIPELINE_SOURCE == "schedule"
+    when: never
+  - if: $ROLLBACK_TO
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.rules_mr: &rules_mr
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+.python:
+  before_script:
+    - python --version
+    - pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+  cache:
+    key:
+      files:
+        - requirements-dev.txt
+    paths:
+      - .cache/pip
+
+# ======================================================================= verify
+version:
+  stage: .pre
+  extends: .python
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python scripts/release_notes.py
+  artifacts:
+    reports:
+      dotenv: version.env
+    paths:
+      - RELEASE_NOTES.md
+    expire_in: 1 week
+  rules: *rules_app
+
+test:
+  stage: test
+  extends: .python
+  script:
+    - python -m pytest -q --junitxml=junit.xml --cov --cov-report=term --cov-report=xml:coverage.xml
+  coverage: '/TOTAL.*\s(\d+)%/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 1 week
+  rules: *rules_app
+
+lint:
+  stage: quality
+  extends: .python
+  script:
+    - ruff format --check .
+    - ruff check --output-format json . > ruff.json || true
+    - python scripts/codequality.py ruff.json > codequality.json
+    - ruff check .
+  artifacts:
+    when: always
+    reports:
+      codequality: codequality.json
+    expire_in: 1 week
+  rules: *rules_app
+
+# Hands-off hand-off: a merge request opened by the Developer flow's service account may not
+# fire the "Merge request: Created" trigger (triggers need a human actor). This job asks the
+# Code Review foundational flow to review it anyway. Advisory only. [VERIFY-IN-UI]
+review-handoff:
+  stage: quality
+  extends: .python
+  script:
+    - python scripts/start_flow.py --definition code_review/v1 --goal "$CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID"
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
+
+# ======================================================================= secure
+# Template jobs are moved into the `secure` stage (SAST and Secret Detection are available
+# on Free; Dependency Scanning and Container Scanning need Ultimate and skip themselves otherwise).
+sast:
+  stage: secure
+
+secret_detection:
+  stage: secure
+  rules: *rules_app
+
+dependency_scanning:
+  stage: secure
+
+pip-audit:
+  stage: secure
+  extends: .python
+  script:
+    - pip-audit -r requirements.txt --strict --desc on -f json -o pip-audit.json || AUDIT_RC=$?
+    - pip-audit -r requirements.txt --strict --desc on || true
+    - test -z "$AUDIT_RC"
+  artifacts:
+    when: always
+    paths:
+      - pip-audit.json
+    expire_in: 1 week
+  rules: *rules_app
+
+# ====================================================================== package
+build-image:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker build --build-arg "PULSE_VERSION=${VERSION:-$CI_COMMIT_SHORT_SHA}" -t "$IMAGE:$CI_COMMIT_SHA" -t "$IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker push "$IMAGE:$CI_COMMIT_SHA"
+    - docker push "$IMAGE:$CI_COMMIT_REF_SLUG"
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
+        docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:latest" && docker push "$IMAGE:latest"
+        if [ -n "$VERSION" ]; then docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:v$VERSION" && docker push "$IMAGE:v$VERSION"; fi
+      fi
+  rules: *rules_app
+
+container_scanning:
+  stage: package
+  needs: [build-image]
+  rules: *rules_app
+
+build-wheel:
+  stage: package
+  extends: .python
+  script:
+    - python -m build
+    - ls -la dist/
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && [ "$RELEASE_NEEDED" = "true" ]; then
+        TWINE_PASSWORD="$CI_JOB_TOKEN" TWINE_USERNAME=gitlab-ci-token \
+          python -m twine upload --non-interactive --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/*
+      else
+        echo "not a release build; wheel kept as artifact only"
+      fi
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+  rules: *rules_app
+
+# ====================================================================== release
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  needs: [version, build-image, build-wheel]
+  script:
+    - |
+      if [ "$RELEASE_NEEDED" != "true" ]; then
+        echo "tag $RELEASE_TAG already exists; no new release (AUTOPILOT §5.1)"; exit 0
+      fi
+      release-cli create \
+        --name "pulse $RELEASE_TAG" \
+        --tag-name "$RELEASE_TAG" \
+        --ref "$CI_COMMIT_SHA" \
+        --description "$(cat RELEASE_NOTES.md)" \
+        --assets-link "{\"name\":\"container image $IMAGE:$RELEASE_TAG\",\"url\":\"$CI_PROJECT_URL/container_registry\",\"link_type\":\"image\"}" \
+        --assets-link "{\"name\":\"python wheel (Package Registry)\",\"url\":\"$CI_PROJECT_URL/-/packages\",\"link_type\":\"package\"}"
+  rules: *rules_main
+
+# ==================================================================== configure
+.deploy:
+  extends: .python
+  variables:
+    GIT_DEPTH: "0"
+  before_script:
+    - pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+    - |
+      if [ -n "$ROLLBACK_TO" ]; then
+        echo "ROLLBACK to $ROLLBACK_TO (AUTOPILOT §6.2)"
+        git fetch --tags --quiet origin
+        git checkout --quiet "$ROLLBACK_TO" -- pulse Dockerfile requirements.txt
+        export DEPLOY_VERSION="${ROLLBACK_TO#v}"
+      else
+        export DEPLOY_VERSION="${VERSION:-$CI_COMMIT_SHORT_SHA}"
+      fi
+      echo "DEPLOY_VERSION=$DEPLOY_VERSION"
+
+deploy-staging:
+  stage: deploy-staging
+  extends: .deploy
+  script:
+    - python scripts/deploy_hf.py --env staging --space "${HF_STAGING_SPACE:-example/pulse-staging}" --version "$DEPLOY_VERSION"
+  environment:
+    name: staging
+    url: $PULSE_STAGING_URL
+    deployment_tier: staging
+  artifacts:
+    reports:
+      dotenv: deploy.env
+  resource_group: staging
+  rules: *rules_deploy
+
+verify-staging:
+  stage: verify-staging
+  extends: .python
+  script:
+    - |
+      if [ -z "$PULSE_STAGING_URL" ]; then echo "PULSE_STAGING_URL not set; staging verification skipped (dry run)"; exit 0; fi
+      python scripts/monitor.py --target "staging=$PULSE_STAGING_URL" --report staging-report.json
+  artifacts:
+    when: always
+    paths:
+      - staging-report.json
+    expire_in: 1 week
+  rules: *rules_deploy
+
+deploy-production:
+  stage: deploy-production
+  extends: .deploy
+  needs: [deploy-staging, verify-staging]
+  script:
+    - python scripts/deploy_hf.py --env production --space "${HF_PRODUCTION_SPACE:-example/pulse-prod}" --version "$DEPLOY_VERSION"
+  environment:
+    name: production
+    url: $PULSE_PRODUCTION_URL
+    deployment_tier: production
+  artifacts:
+    reports:
+      dotenv: deploy.env
+  resource_group: production
+  rules: *rules_deploy
+
+# ====================================================================== monitor
+monitor:
+  stage: monitor
+  extends: .python
+  script:
+    - |
+      ARGS=""
+      [ -n "$PULSE_STAGING_URL" ] && ARGS="$ARGS --target staging=$PULSE_STAGING_URL"
+      [ -n "$PULSE_PRODUCTION_URL" ] && ARGS="$ARGS --target production=$PULSE_PRODUCTION_URL"
+      python scripts/monitor.py $ARGS
+  artifacts:
+    when: always
+    paths:
+      - monitor-report.json
+    expire_in: 1 month
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+# Opens the GitLab Incident and starts the rollback pipeline when the monitor is red.
+# The Incident Responder flow (.gitlab/duo/flows/f4-incident-responder.yaml) is started by the
+# "Pipeline: Failed" trigger and writes the RCA into the incident.
+incident:
+  stage: monitor
+  extends: .python
+  needs:
+    - job: monitor
+      artifacts: true
+  when: on_failure
+  script:
+    - python scripts/incident.py
+  artifacts:
+    when: always
+    reports:
+      dotenv: incident.env
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+# ======================================================================= govern
+policy-check:
+  stage: govern
+  extends: .python
+  script:
+    - python scripts/policy.py --mr "$CI_MERGE_REQUEST_IID" --comment
+  rules: *rules_mr
+
+auto-merge:
+  stage: govern
+  extends: .python
+  needs:
+    - policy-check
+    - test
+    - lint
+    - pip-audit
+    - build-image
+  script:
+    - python scripts/automerge.py --mr "$CI_MERGE_REQUEST_IID"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
+
+journey-card:
+  stage: govern
+  extends: .python
+  needs: [deploy-production]
+  script:
+    - python scripts/journey_card.py --close
+  artifacts:
+    paths:
+      - journey-card.md
+    expire_in: 1 month
+  rules: *rules_main
+
+rollback-note:
+  stage: govern
+  extends: .python
+  needs: [deploy-production]
+  script:
+    - |
+      python - <<'PY'
+      import os, sys
+      sys.path.insert(0, "scripts")
+      from gitlab_api import GitLab
+      gl = GitLab(); iid = os.environ.get("INCIDENT_IID")
+      if iid and gl.can_write:
+          gl.issue_note(int(iid), f"Rollback to `{os.environ['ROLLBACK_TO']}` deployed to staging and production: {os.environ['CI_PIPELINE_URL']}\n\nautopilot: rules=[§5.2, §6.2]")
+          print("incident updated")
+      else:
+          print("no incident to update")
+      PY
+  rules:
+    - if: $ROLLBACK_TO
+
+audit-trail:
+  stage: govern
+  extends: .python
+  when: always
+  script:
+    - |
+      python - <<'PY'
+      import json, os
+      keys = ["CI_PIPELINE_ID","CI_PIPELINE_SOURCE","CI_COMMIT_SHA","CI_COMMIT_REF_NAME","CI_MERGE_REQUEST_IID",
+              "CI_MERGE_REQUEST_LABELS","GITLAB_USER_LOGIN","ROLLBACK_TO","INCIDENT_IID","VERSION","RELEASE_NEEDED"]
+      os.makedirs("audit", exist_ok=True)
+      json.dump({k: os.environ.get(k, "") for k in keys}, open("audit/pipeline.json", "w"), indent=2)
+      print(open("audit/pipeline.json").read())
+      PY
+  artifacts:
+    paths:
+      - audit/
+    expire_in: 1 year
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $ROLLBACK_TO
