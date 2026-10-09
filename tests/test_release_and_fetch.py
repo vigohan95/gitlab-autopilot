@@ -32,7 +32,11 @@ def test_release_notes_main_in_ci_uses_api(monkeypatch, tmp_path):
     monkeypatch.setattr(release_notes, "_api_commits_since", lambda prev, sha: [f"since {prev} to {sha}"])
     assert release_notes.main() == 0
     env = (tmp_path / "version.env").read_text()
-    assert "RELEASE_NEEDED=true" in env and "PREVIOUS_TAG=v0.0.1" in env and "RELEASE_TAG=v0.1.0" in env
+    assert (
+        "RELEASE_NEEDED=true" in env
+        and "PREVIOUS_TAG=v0.0.1" in env
+        and f"RELEASE_TAG=v{release_notes.__version__}" in env
+    )
     assert "since v0.0.1 to abc" in (tmp_path / "RELEASE_NOTES.md").read_text(encoding="utf-8")
 
 
