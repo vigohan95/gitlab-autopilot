@@ -49,22 +49,41 @@ def _git_commits_since(ref: str | None) -> list[str]:
 
 # -- GitLab API path (CI) ------------------------------------------------------
 def _api_tags() -> list[str]:
-    from gitlab_api import GitLab
+    """Release tag names, newest first.
 
-    tags = GitLab().get_all("repository/tags", search="^v", order_by="version", sort="desc")
-    return [t["name"] for t in tags if re.fullmatch(r"v\d+\.\d+\.\d+", t["name"])]
-
-
-def _api_commits_since(prev: str | None, sha: str) -> list[str]:
+    The Releases API accepts CI_JOB_TOKEN for the running project (it is in the job-token
+    allowlist); the Tags API may not, so it is only a fallback. Raises if neither works.
+    """
     from gitlab_api import GitLab
 
     gl = GitLab()
-    if prev:
-        cmp = gl.get("repository/compare", **{"from": prev, "to": sha})
-        commits = cmp.get("commits", [])
-    else:
-        commits = gl.get("repository/commits", ref_name=sha, per_page=50)
-    return [c["title"] for c in commits if len(c.get("parent_ids", [])) < 2]
+    try:
+        names = [r["tag_name"] for r in gl.get_all("releases")]
+    except Exception as exc:  # noqa: BLE001
+        print(f"::warning:: releases API unavailable ({type(exc).__name__}); trying tags API")
+        tags = gl.get_all("repository/tags", search="^v", order_by="version", sort="desc")
+        names = [t["name"] for t in tags]
+    semver = [n for n in names if re.fullmatch(r"v\d+\.\d+\.\d+", n)]
+    return sorted(semver, key=lambda n: tuple(int(x) for x in n[1:].split(".")), reverse=True)
+
+
+def _api_commits_since(prev: str | None, sha: str) -> list[str]:
+    """Commit titles since ``prev``; falls back to the current commit title when the
+    Repository API refuses the job token."""
+    from gitlab_api import GitLab
+
+    gl = GitLab()
+    try:
+        if prev:
+            cmp = gl.get("repository/compare", **{"from": prev, "to": sha})
+            commits = cmp.get("commits", [])
+        else:
+            commits = gl.get("repository/commits", ref_name=sha, per_page=50)
+        return [c["title"] for c in commits if len(c.get("parent_ids", [])) < 2]
+    except Exception as exc:  # noqa: BLE001
+        print(f"::warning:: commit list unavailable ({type(exc).__name__}); using CI_COMMIT_TITLE")
+        title = os.environ.get("CI_COMMIT_TITLE", "").strip()
+        return [title] if title else []
 
 
 def render(version: str, prev: str | None, commits: list[str]) -> str:
