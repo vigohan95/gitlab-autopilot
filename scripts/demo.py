@@ -220,6 +220,10 @@ def scene_security(d: Demo, fix: bool = False) -> int:
             [{"action": "update", "file_path": "requirements.txt", "content": good}],
         )
         d.gl.add_labels("merge_requests", mr["iid"], ["security-fix"])
+        d.gl.put(  # the squash commit takes the MR title: make it say what actually merged
+            f"merge_requests/{mr['iid']}",
+            json={"title": f"security: bump fastapi to {_current_pin(req, 'fastapi')} after pip-audit findings"},
+        )
         d.gl.mr_note(
             mr["iid"],
             "Security fix: restored the current `fastapi` pin after `pip-audit` flagged starlette "
