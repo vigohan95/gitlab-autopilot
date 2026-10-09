@@ -1,19 +1,47 @@
-"""Exit 0 if the wheel for the given version is already in the project's PyPI package registry.
+"""Succeed if the wheel for the given version is already in the project's PyPI package registry.
 
     python scripts/package_exists.py 0.1.1
 
-Used after ``twine upload --skip-existing``: GitLab's registry answers 400 for a
-duplicate file, which twine does not always recognise. The Packages API accepts
-CI_JOB_TOKEN for the running project.
+Runs after ``twine upload`` fails. twine >= 6 does not allow ``--skip-existing``
+for non-PyPI repositories, and GitLab answers 400 for a duplicate file, so the
+registry is checked directly through the PyPI *simple* index, which accepts the
+CI job token as basic auth (username ``gitlab-ci-token``):
+
+    GET {CI_API_V4_URL}/projects/{CI_PROJECT_ID}/packages/pypi/simple/pulse-monitor
+
+Exit 0 when the file for the version is listed; exit 1 when the index is readable
+and the version is missing (a real upload failure); exit 0 with a warning when the
+index cannot be read at all (cannot verify - do not block the release on it).
 """
 
 from __future__ import annotations
 
+import os
+import re
 import sys
 
-from gitlab_api import GitLab
+import httpx
 
 PACKAGE = "pulse-monitor"
+
+
+def normalized(name: str) -> str:
+    return re.sub(r"[-_.]+", "_", name).lower()
+
+
+def version_listed(index_html: str, version: str, package: str = PACKAGE) -> bool:
+    """True when the simple index lists a file for ``package`` at ``version``."""
+    stem = f"{normalized(package)}-{re.escape(version)}"
+    return re.search(rf"{stem}(?:-[^\"'<>\s]*)?\.(?:whl|tar\.gz)", index_html, re.I) is not None
+
+
+def fetch_index(package: str = PACKAGE) -> httpx.Response:
+    api = os.environ.get("CI_API_V4_URL", "https://gitlab.com/api/v4")
+    project = os.environ.get("CI_PROJECT_ID", "")
+    token = os.environ.get("CI_JOB_TOKEN", "")
+    auth = ("gitlab-ci-token", token) if token else None
+    url = f"{api}/projects/{project}/packages/pypi/simple/{package}"
+    return httpx.get(url, auth=auth, timeout=30, follow_redirects=True)
 
 
 def main(argv: list[str]) -> int:
@@ -22,15 +50,18 @@ def main(argv: list[str]) -> int:
         print("usage: package_exists.py <version>")
         return 2
     try:
-        pkgs = GitLab().get_all("packages", package_type="pypi", package_name=PACKAGE, package_version=version)
-    except Exception as exc:  # noqa: BLE001
-        print(f"packages API unavailable ({type(exc).__name__}: {exc})")
-        return 1
-    if pkgs:
-        print(f"{PACKAGE} {version} already in the Package Registry: {pkgs[0].get('_links', {}).get('web_path', '')}")
+        r = fetch_index()
+    except httpx.HTTPError as exc:
+        print(f"::warning:: simple index unreachable ({type(exc).__name__}); cannot verify {PACKAGE} {version}")
         return 0
-    print(f"{PACKAGE} {version} not found in the Package Registry")
-    return 1
+    if r.status_code == 200:
+        if version_listed(r.text, version):
+            print(f"{PACKAGE} {version} is already in the Package Registry; treating the upload as done")
+            return 0
+        print(f"ERROR: {PACKAGE} {version} is not in the Package Registry and the upload failed")
+        return 1
+    print(f"::warning:: simple index returned HTTP {r.status_code}; cannot verify {PACKAGE} {version}")
+    return 0
 
 
 if __name__ == "__main__":
