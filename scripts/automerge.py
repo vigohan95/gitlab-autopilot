@@ -30,7 +30,7 @@ def main(argv: list[str] | None = None) -> int:
 
     gl = GitLab()
     if not gl.can_write:
-        warn("AUTOPILOT_TOKEN not set; cannot merge (set it as a masked, protected CI/CD variable)")
+        warn("AUTOPILOT_TOKEN not set; cannot merge (masked, NOT protected: MR pipelines use unprotected branches)")
         return 0
 
     policy = load_policy()

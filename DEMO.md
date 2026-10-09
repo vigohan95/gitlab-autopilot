@@ -2,7 +2,7 @@
 
 All scenes are driven by `scripts/demo.py` through the GitLab API. They need
 one secret, `AUTOPILOT_TOKEN` (project access token, scope `api`, role
-Maintainer), either exported locally or stored as a masked CI/CD variable —
+Maintainer), either exported locally or stored as a masked (not protected) CI/CD variable —
 then every scene is also a **manual job on the main pipeline** (`demo:*`,
 play button, no local secrets needed).
 

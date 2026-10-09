@@ -170,7 +170,7 @@ Everything is free-tier; no card is needed anywhere.
 
    | variable | value | flags |
    |---|---|---|
-   | `AUTOPILOT_TOKEN` | project access token, scope `api`, role Maintainer | masked, protected |
+   | `AUTOPILOT_TOKEN` | project access token, scope `api`, role Maintainer | masked, **not** protected (MR pipelines run on unprotected branches) |
    | `RENDER_API_KEY` | Render API key (Account Settings > API Keys); the two free services come from `render.yaml` (New > Blueprint) | masked, protected |
    | `PULSE_STAGING_URL` / `PULSE_PRODUCTION_URL` | the `onrender.com` URLs printed by the first deploy (used by the scheduled monitor) | — |
    | `PULSE_CHAOS` | `healthz` — **only** on environment `production`, only during the demo (AUTOPILOT §7) | environment-scoped |
