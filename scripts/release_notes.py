@@ -122,11 +122,9 @@ def main() -> int:
         tags = _api_tags() if in_ci else _git_tags()
         tag, needed, prev = decide(tags, version)
         commits = _api_commits_since(prev, sha) if in_ci else _git_commits_since(prev)
-    except Exception as exc:  # noqa: BLE001 - never block the pipeline on notes
-        print(
-            f"::warning:: tags/commits unavailable via {source} ({type(exc).__name__}: {exc}); assuming first release"
-        )
-        tag, needed, prev, commits = f"v{version}", True, None, []
+    except Exception as exc:  # noqa: BLE001 - never block the pipeline, never re-release blindly
+        print(f"::warning:: tags unavailable via {source} ({type(exc).__name__}: {exc}); RELEASE_NEEDED=false")
+        tag, needed, prev, commits = f"v{version}", False, None, []
 
     notes = render(version, prev, commits)
     Path("RELEASE_NOTES.md").write_text(notes, encoding="utf-8")

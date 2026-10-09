@@ -45,7 +45,44 @@ def test_release_notes_main_survives_api_failure(monkeypatch, tmp_path):
 
     monkeypatch.setattr(release_notes, "_api_tags", boom)
     assert release_notes.main() == 0
-    assert "RELEASE_NEEDED=true" in (tmp_path / "version.env").read_text()
+    assert "RELEASE_NEEDED=false" in (tmp_path / "version.env").read_text()
+
+
+def test_api_tags_prefers_releases_and_sorts_semver(monkeypatch):
+    class FakeGL:
+        def get_all(self, path, **params):
+            assert path == "releases"
+            return [{"tag_name": "v0.2.0"}, {"tag_name": "v0.10.0"}, {"tag_name": "rc-1"}, {"tag_name": "v0.9.1"}]
+
+    import gitlab_api
+
+    monkeypatch.setattr(gitlab_api, "GitLab", lambda: FakeGL())
+    assert release_notes._api_tags() == ["v0.10.0", "v0.9.1", "v0.2.0"]
+
+
+def test_api_tags_falls_back_to_tags_api(monkeypatch):
+    class FakeGL:
+        def get_all(self, path, **params):
+            if path == "releases":
+                raise RuntimeError("404")
+            return [{"name": "v0.1.0"}]
+
+    import gitlab_api
+
+    monkeypatch.setattr(gitlab_api, "GitLab", lambda: FakeGL())
+    assert release_notes._api_tags() == ["v0.1.0"]
+
+
+def test_commits_fallback_to_commit_title(monkeypatch):
+    class FakeGL:
+        def get(self, path, **params):
+            raise RuntimeError("403")
+
+    import gitlab_api
+
+    monkeypatch.setattr(gitlab_api, "GitLab", lambda: FakeGL())
+    monkeypatch.setenv("CI_COMMIT_TITLE", "pulse: bump to 0.1.1")
+    assert release_notes._api_commits_since("v0.1.0", "abc") == ["pulse: bump to 0.1.1"]
 
 
 def _archive(prefix: str, files: dict[str, bytes]) -> bytes:

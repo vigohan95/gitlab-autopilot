@@ -221,9 +221,11 @@ build-wheel:
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ] && [ "$RELEASE_NEEDED" = "true" ]; then
         TWINE_PASSWORD="$CI_JOB_TOKEN" TWINE_USERNAME=gitlab-ci-token \
-          python -m twine upload --non-interactive --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/*
+          python -m twine upload --non-interactive --skip-existing \
+            --repository-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi" dist/* \
+          || python scripts/package_exists.py "$VERSION"
       else
-        echo "not a release build; wheel kept as artifact only"
+        echo "not a release build (RELEASE_NEEDED=$RELEASE_NEEDED); wheel kept as artifact only"
       fi
   artifacts:
     paths:
