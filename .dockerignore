@@ -1,0 +1,15 @@
+.git
+.gitlab
+.gitlab-ci-local
+tests
+docs
+scripts
+mcp_server
+dist
+build
+*.db
+*.egg-info
+__pycache__
+.pytest_cache
+.ruff_cache
+.venv
