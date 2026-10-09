@@ -1,0 +1,20 @@
+name: Mirror to GitLab
+# Pushes every commit on main to the GitLab project that runs the Autopilot pipeline.
+# Needs one repository secret: GITLAB_TOKEN (GitLab project access token, scope write_repository, role Developer+).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_TOKEN" ]; then echo "GITLAB_TOKEN secret not set; skipping mirror"; exit 0; fi
+          git push "https://oauth2:${GITLAB_TOKEN}@gitlab.com/hanwg666/gitlab-autopilot.git" HEAD:main
