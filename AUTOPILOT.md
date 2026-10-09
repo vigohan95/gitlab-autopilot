@@ -43,7 +43,10 @@ require a human (`autopilot::human-approved`).
 3.1 The merge request pipeline is fully green (no failed required jobs).
 
 3.2 The merge request has been approved by the reviewer agent, which must have
-posted a review that cites this file.
+posted a review that cites this file. When no reviewer agent is enabled on the
+project, the `policy-check` CI job is the reviewer of record: it applies the
+same rules and labels the merge request `autopilot::approved` (or
+`autopilot::needs-human`).
 
 3.3 Security scanners (SAST, Secret Detection, Dependency Scanning, Container
 Scanning, `pip-audit`) report **no new High or Critical** findings on the

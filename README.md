@@ -188,6 +188,12 @@ Everything is free-tier; no card is needed anywhere.
     schedule manually; watch Monitor > Incidents and the rollback pipeline;
     then remove the variable.
 
+## Demo without Duo
+
+`DEMO.md` is the runbook: `scripts/demo.py` (or the manual `demo:*` jobs on the main
+pipeline) plays the three scenes — hands-off merge + release, security gate, chaos → incident →
+rollback — through the API with only `AUTOPILOT_TOKEN`.
+
 ## Local development
 
 ```bash

@@ -22,6 +22,7 @@ stages:
   - deploy-production
   - monitor
   - govern
+  - demo
 
 workflow:
   rules:
@@ -422,3 +423,58 @@ audit-trail:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $ROLLBACK_TO
+
+# ========================================================================= demo
+# Manual jobs that drive the demo scenes through the API with AUTOPILOT_TOKEN (see DEMO.md).
+# They never block the pipeline and skip themselves when the token is absent.
+.demo:
+  stage: demo
+  extends: .python
+  rules:
+    - if: $ROLLBACK_TO
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
+
+demo:setup:
+  extends: .demo
+  script:
+    - python scripts/demo.py setup
+
+demo:mr:
+  extends: .demo
+  script:
+    - python scripts/demo.py mr
+
+demo:security:
+  extends: .demo
+  script:
+    - python scripts/demo.py security
+
+demo:security-fix:
+  extends: .demo
+  script:
+    - python scripts/demo.py security --fix
+
+demo:chaos-on:
+  extends: .demo
+  script:
+    - |
+      if [ -n "$PULSE_PRODUCTION_URL" ] && [ -z "$DEMO_FAKE_URL" ]; then
+        python scripts/demo.py chaos on
+      else
+        python scripts/demo.py chaos on --fake-url ${DEMO_FAKE_URL:-https://pulse-chaos.invalid}
+      fi
+
+demo:chaos-off:
+  extends: .demo
+  script:
+    - python scripts/demo.py chaos off ${DEMO_FAKE_URL:+--fake-url}
+
+demo:cleanup:
+  extends: .demo
+  script:
+    - python scripts/demo.py cleanup

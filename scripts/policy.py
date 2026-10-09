@@ -214,7 +214,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.comment and args.mr and os.environ.get("AUTOPILOT_TOKEN"):
         from gitlab_api import GitLab
 
-        GitLab().mr_note(args.mr, decision.as_markdown())
+        gl = GitLab()
+        gl.mr_note(args.mr, decision.as_markdown())
+        # §3.2: when no reviewer agent is enabled, the policy check is the reviewer of record.
+        label = policy["labels"]["approved"] if decision.allowed else policy["labels"]["needs_human"]
+        gl.add_labels("merge_requests", args.mr, [label])
     return 0 if decision.allowed else 2
 
 
