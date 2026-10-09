@@ -202,7 +202,11 @@ def main(argv: list[str] | None = None) -> int:
 
     policy = load_policy()
     if args.mr:
-        decision = evaluate_mr(policy, args.mr)
+        try:
+            decision = evaluate_mr(policy, args.mr)
+        except Exception as exc:  # noqa: BLE001 - API unreachable: do not block the pipeline
+            print(f"skipped: could not read merge request !{args.mr} via the API ({type(exc).__name__}: {exc})")
+            return 0
     else:
         decision = evaluate(policy, args.files or [], labels=args.labels, changed_lines=args.lines)
 

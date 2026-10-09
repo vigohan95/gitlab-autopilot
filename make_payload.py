@@ -27,6 +27,54 @@ ROOT = Path(__file__).resolve().parent
 MAX_BINARY = 200 * 1024
 
 
+def changed_since(commit: str) -> list[tuple[str, str]]:
+    """[(status, path)] from ``git diff --name-status <commit> HEAD`` (A/M/D; renames become D + A)."""
+    cmd = ["git", "diff", "--name-status", "-M", "-z", commit, "HEAD"]
+    out = subprocess.run(cmd, cwd=ROOT, capture_output=True, check=True).stdout.decode("utf-8")  # noqa: S603, S607
+    parts = [p for p in out.split("\0") if p != ""]
+    pairs: list[tuple[str, str]] = []
+    i = 0
+    while i < len(parts):
+        status = parts[i]
+        if status.startswith(("R", "C")):
+            old, new = parts[i + 1], parts[i + 2]
+            if status.startswith("R"):
+                pairs.append(("D", old))
+            pairs.append(("A", new))
+            i += 3
+        else:
+            pairs.append((status[0], parts[i + 1]))
+            i += 2
+    return pairs
+
+
+def file_action(action: str, rel: str) -> dict:
+    if action == "delete":
+        return {"action": "delete", "file_path": rel}
+    data = (ROOT / rel).read_bytes()
+    try:
+        content = data.decode("utf-8").replace("\r\n", "\n")
+        if "\0" in content:
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "binary")
+        return {"action": action, "file_path": rel, "content": content, "encoding": "text"}
+    except UnicodeDecodeError:
+        if len(data) > MAX_BINARY:
+            raise SystemExit(f"{rel}: binary file larger than 200 KB; remove it from the tree") from None
+        return {
+            "action": action,
+            "file_path": rel,
+            "content": base64.b64encode(data).decode("ascii"),
+            "encoding": "base64",
+        }
+
+
+def build_since(commit: str, branch: str, message: str) -> dict:
+    actions = []
+    for status, rel in changed_since(commit):
+        actions.append(file_action({"A": "create", "M": "update", "D": "delete"}.get(status, "update"), rel))
+    return {"branch": branch, "commit_message": message, "actions": actions}
+
+
 def tracked_files() -> list[str]:
     out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, check=True).stdout  # noqa: S607
     return [p for p in out.decode("utf-8").split("\0") if p]
@@ -67,12 +115,20 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--message", default="Autopilot: pulse service, DevSecOps pipeline, Duo flows and agents, policy as code"
     )
-    ap.add_argument("--out", default="dist/commit_payload.json")
+    ap.add_argument("--since", help="commit: emit only files changed since it (create/update/delete)")
+    ap.add_argument("--out", help="default dist/commit_payload.json, or dist/update_payload.json with --since")
     args = ap.parse_args(argv)
 
-    payload = build(args.action, args.branch, args.message)
-    stats = payload.pop("_stats")
-    out = ROOT / args.out
+    if args.since:
+        payload = build_since(args.since, args.branch, args.message)
+        n_text = sum(len(a.get("content", "")) for a in payload["actions"] if a.get("encoding") == "text")
+        stats = {"files": len(payload["actions"]), "text_bytes": n_text, "binary_bytes": 0}
+        for a in payload["actions"]:
+            print(f"  {a['action']:<6} {a['file_path']}")
+    else:
+        payload = build(args.action, args.branch, args.message)
+        stats = payload.pop("_stats")
+    out = ROOT / (args.out or ("dist/update_payload.json" if args.since else "dist/commit_payload.json"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     size = out.stat().st_size

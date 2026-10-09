@@ -1,23 +1,29 @@
 """Generate RELEASE_NOTES.md and version.env for the release job (AUTOPILOT §5).
 
 Reads ``pulse.__version__``, finds the previous ``v*`` tag and lists the commits
-(with merge-request and issue references) since then. Never invents changes
-(§5.3). Also decides whether a release is needed: a release is cut only when no
+since then. Never invents changes (§5.3). A release is cut only when no
 ``v<version>`` tag exists yet.
 
-Outputs (dotenv) : VERSION, RELEASE_NEEDED (true/false), PREVIOUS_TAG
+In CI this uses the GitLab REST API only (Tags + Compare endpoints), so it runs
+in the slim Python image without a ``git`` binary. Locally (no ``CI_PROJECT_ID``)
+it falls back to ``git`` when available.
+
+Outputs (dotenv) : VERSION, RELEASE_TAG, RELEASE_NEEDED (true/false), PREVIOUS_TAG
 Outputs (file)   : RELEASE_NOTES.md
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from pulse import __version__  # noqa: E402
 
@@ -25,19 +31,40 @@ MR_RE = re.compile(r"!(\d+)")
 ISSUE_RE = re.compile(r"#(\d+)")
 
 
-def git(*args: str) -> str:
-    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip()
+# -- git fallback (local use only) ---------------------------------------------
+def _git(*args: str) -> str:
+    if not shutil.which("git"):
+        return ""
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip()  # noqa: S607
 
 
-def previous_tag(current: str) -> str | None:
-    tags = [t for t in git("tag", "--list", "v*", "--sort=-v:refname").splitlines() if t and t != current]
-    return tags[0] if tags else None
+def _git_tags() -> list[str]:
+    return [t for t in _git("tag", "--list", "v*", "--sort=-v:refname").splitlines() if t]
 
 
-def commits_since(ref: str | None) -> list[str]:
+def _git_commits_since(ref: str | None) -> list[str]:
     rng = f"{ref}..HEAD" if ref else "HEAD"
-    out = git("log", "--no-merges", "--pretty=format:%s", rng)
-    return [ln for ln in out.splitlines() if ln.strip()]
+    return [ln for ln in _git("log", "--no-merges", "--pretty=format:%s", rng).splitlines() if ln.strip()]
+
+
+# -- GitLab API path (CI) ------------------------------------------------------
+def _api_tags() -> list[str]:
+    from gitlab_api import GitLab
+
+    tags = GitLab().get_all("repository/tags", search="^v", order_by="version", sort="desc")
+    return [t["name"] for t in tags if re.fullmatch(r"v\d+\.\d+\.\d+", t["name"])]
+
+
+def _api_commits_since(prev: str | None, sha: str) -> list[str]:
+    from gitlab_api import GitLab
+
+    gl = GitLab()
+    if prev:
+        cmp = gl.get("repository/compare", **{"from": prev, "to": sha})
+        commits = cmp.get("commits", [])
+    else:
+        commits = gl.get("repository/commits", ref_name=sha, per_page=50)
+    return [c["title"] for c in commits if len(c.get("parent_ids", [])) < 2]
 
 
 def render(version: str, prev: str | None, commits: list[str]) -> str:
@@ -47,7 +74,6 @@ def render(version: str, prev: str | None, commits: list[str]) -> str:
     if not commits:
         lines.append("- (no commits listed)")
     for c in commits:
-        c = MR_RE.sub(r"!\1", c)
         lines.append(f"- {c}")
     mrs = sorted({m for c in commits for m in MR_RE.findall(c)}, key=int)
     issues = sorted({i for c in commits for i in ISSUE_RE.findall(c)}, key=int)
@@ -60,19 +86,37 @@ def render(version: str, prev: str | None, commits: list[str]) -> str:
     return "\n".join(lines)
 
 
+def decide(tags: list[str], version: str) -> tuple[str, bool, str | None]:
+    """Return (tag, release_needed, previous_tag). ``tags`` newest-first."""
+    tag = f"v{version}"
+    exists = tag in tags
+    others = [t for t in tags if t != tag]
+    return tag, not exists, (others[0] if others else None)
+
+
 def main() -> int:
     version = __version__
-    tag = f"v{version}"
-    exists = bool(git("tag", "--list", tag))
-    prev = previous_tag(tag)
-    notes = render(version, prev, commits_since(prev))
-    needed = "false" if exists else "true"
+    in_ci = bool(os.environ.get("CI_PROJECT_ID"))
+    sha = os.environ.get("CI_COMMIT_SHA", "HEAD")
+    source = "gitlab-api" if in_ci else "git"
+    try:
+        tags = _api_tags() if in_ci else _git_tags()
+        tag, needed, prev = decide(tags, version)
+        commits = _api_commits_since(prev, sha) if in_ci else _git_commits_since(prev)
+    except Exception as exc:  # noqa: BLE001 - never block the pipeline on notes
+        print(
+            f"::warning:: tags/commits unavailable via {source} ({type(exc).__name__}: {exc}); assuming first release"
+        )
+        tag, needed, prev, commits = f"v{version}", True, None, []
+
+    notes = render(version, prev, commits)
     Path("RELEASE_NOTES.md").write_text(notes, encoding="utf-8")
+    needed_s = "true" if needed else "false"
     Path("version.env").write_text(
-        f"VERSION={version}\nRELEASE_TAG={tag}\nRELEASE_NEEDED={needed}\nPREVIOUS_TAG={prev or ''}\n",
+        f"VERSION={version}\nRELEASE_TAG={tag}\nRELEASE_NEEDED={needed_s}\nPREVIOUS_TAG={prev or ''}\n",
         encoding="utf-8",
     )
-    print(Path("version.env").read_text())
+    print(Path("version.env").read_text(encoding="utf-8"))
     print(notes)
     return 0
 

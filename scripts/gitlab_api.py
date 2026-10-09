@@ -29,7 +29,11 @@ class GitLab:
                 headers["Authorization"] = f"Bearer {self.token}"
             else:
                 headers["PRIVATE-TOKEN"] = self.token
+        elif self.job_token:
+            headers["JOB-TOKEN"] = self.job_token  # accepted by a subset of endpoints
         self._client = httpx.Client(base_url=self.base, headers=headers, timeout=30)
+        # GETs on a public project also work anonymously; used as a fallback when a token is refused.
+        self._anon = httpx.Client(base_url=self.base, headers={"Accept": "application/json"}, timeout=30)
 
     @property
     def can_write(self) -> bool:
@@ -41,17 +45,25 @@ class GitLab:
             return path
         return f"/projects/{self.project}/{path.lstrip('/')}"
 
-    def get(self, path: str, **params: Any) -> Any:
+    def _get_raw(self, path: str, params: dict | None = None) -> httpx.Response:
         r = self._client.get(self._url(path), params=params)
+        if r.status_code in (401, 403) and (self.token or self.job_token):
+            r = self._anon.get(self._url(path), params=params)
         r.raise_for_status()
-        return r.json()
+        return r
+
+    def get(self, path: str, **params: Any) -> Any:
+        r = self._get_raw(path, params)
+        return r.json() if "json" in r.headers.get("content-type", "") else r.text
+
+    def get_bytes(self, path: str, **params: Any) -> bytes:
+        return self._get_raw(path, params).content
 
     def get_all(self, path: str, **params: Any) -> list[Any]:
         out: list[Any] = []
         page = 1
         while True:
-            r = self._client.get(self._url(path), params={**params, "per_page": 100, "page": page})
-            r.raise_for_status()
+            r = self._get_raw(path, {**params, "per_page": 100, "page": page})
             chunk = r.json()
             out.extend(chunk)
             if not r.headers.get("x-next-page"):

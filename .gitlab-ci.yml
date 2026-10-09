@@ -105,8 +105,6 @@ default:
 version:
   stage: .pre
   extends: .python
-  variables:
-    GIT_DEPTH: "0"
   script:
     - python scripts/release_notes.py
   artifacts:
@@ -254,15 +252,12 @@ release:
 # ==================================================================== configure
 .deploy:
   extends: .python
-  variables:
-    GIT_DEPTH: "0"
   before_script:
     - pip install --quiet --disable-pip-version-check -r requirements-dev.txt
     - |
       if [ -n "$ROLLBACK_TO" ]; then
         echo "ROLLBACK to $ROLLBACK_TO (AUTOPILOT §6.2)"
-        git fetch --tags --quiet origin
-        git checkout --quiet "$ROLLBACK_TO" -- pulse Dockerfile requirements.txt
+        python scripts/fetch_ref.py --ref "$ROLLBACK_TO" --paths pulse Dockerfile requirements.txt
         export DEPLOY_VERSION="${ROLLBACK_TO#v}"
       else
         export DEPLOY_VERSION="${VERSION:-$CI_COMMIT_SHORT_SHA}"
