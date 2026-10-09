@@ -48,13 +48,29 @@ def test_journey_card_render_counts_stages():
         {"name": "monitor", "stage": "monitor", "status": "success", "duration": 5, "retried": False},
         {"name": "audit-trail", "stage": "govern", "status": "success", "duration": 5, "retried": False},
     ]
-    mr = {"iid": 7, "title": "Add latency percentiles"}
-    issue = {"iid": 3}
+    mr = {
+        "iid": 7,
+        "title": "Add latency percentiles",
+        "author": {"username": "ai-f1-group"},
+        "labels": ["autopilot", "autopilot::approved"],
+    }
+    issue = {"iid": 3, "author": {"username": "hanwg666"}}
     card = journey_card.render(jobs, mr, issue, "https://x/-/pipelines/9")
     assert "**9/9 stages touched**" in card
     assert "1 retried jobs" in card
-    assert "| ✅ plan |" in card and "issue #3" in card
-    assert "| ✅ create |" in card and "!7" in card
+    assert "| ✅ plan |" in card and "issue #3 opened by @hanwg666" in card
+    assert "| ✅ create |" in card and "!7 opened by @ai-f1-group (GitLab Duo flow service account)" in card
+    assert "policy-check (autopilot::approved)" in card
+
+
+def test_journey_card_monitor_row_and_human_actor():
+    jobs = [{"name": "test", "stage": "test", "status": "success", "duration": 1, "retried": False}]
+    mr = {"iid": 2, "title": "t", "author": {"username": "project_87419642_bot"}, "labels": ["autopilot"]}
+    card = journey_card.render(
+        jobs, mr, None, "", monitor={"id": 55, "status": "success", "web_url": "https://x/-/pipelines/55"}
+    )
+    assert "| ✅ monitor | scheduled monitor pipeline 55 (success)" in card
+    assert "!2 opened by @project_87419642_bot, reviewed by no approval label" in card
 
 
 def test_journey_card_render_partial():

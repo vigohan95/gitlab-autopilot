@@ -36,7 +36,18 @@ STAGE_MAP = {
 LIFECYCLE = ["plan", "create", "verify", "package", "secure", "release", "configure", "monitor", "govern"]
 
 
-def render(jobs: list[dict], mr: dict | None, issue: dict | None, pipeline_url: str) -> str:
+def _actor(obj: dict | None) -> str:
+    user = ((obj or {}).get("author") or {}).get("username")
+    if not user:
+        return "unknown actor"
+    if user.startswith(("ai-", "duo-")) or "duo" in user:
+        return f"@{user} (GitLab Duo flow service account)"
+    return f"@{user}"
+
+
+def render(
+    jobs: list[dict], mr: dict | None, issue: dict | None, pipeline_url: str, monitor: dict | None = None
+) -> str:
     covered: dict[str, list[str]] = defaultdict(list)
     retries = 0
     total = 0.0
@@ -46,11 +57,17 @@ def render(jobs: list[dict], mr: dict | None, issue: dict | None, pipeline_url: 
         total += j.get("duration") or 0
         if j.get("retried"):
             retries += 1
-    # plan and create are covered by the issue and the merge request, not by jobs
+    # plan and create are covered by the issue and the merge request, not by jobs; report who really did it
     if issue:
-        covered["plan"].insert(0, f"issue #{issue['iid']} planned by Planner flow")
+        covered["plan"].insert(0, f"issue #{issue['iid']} opened by {_actor(issue)}, label autopilot")
     if mr:
-        covered["create"].insert(0, f"!{mr['iid']} opened by Developer flow, reviewed by autopilot-reviewer")
+        labels = mr.get("labels") or []
+        review = "policy-check (autopilot::approved)" if "autopilot::approved" in labels else "no approval label"
+        covered["create"].insert(0, f"!{mr['iid']} opened by {_actor(mr)}, reviewed by {review}")
+    if monitor:
+        covered["monitor"].insert(
+            0, f"scheduled monitor pipeline {monitor.get('id')} ({monitor.get('status')}) {monitor.get('web_url', '')}"
+        )
 
     lines = ["## Autopilot journey card", ""]
     if mr:
@@ -80,9 +97,11 @@ def main(argv: list[str] | None = None) -> int:
     gl = GitLab()
     pipeline_url = os.environ.get("CI_PIPELINE_URL", "")
     jobs: list[dict] = []
-    mr = issue = None
+    mr = issue = monitor = None
     try:
         jobs = gl.get_all(f"pipelines/{args.pipeline}/jobs", include_retried="true")
+        scheduled = gl.get("pipelines", source="schedule", per_page=1)
+        monitor = scheduled[0] if scheduled else None
         mrs = gl.get(f"repository/commits/{args.sha}/merge_requests")
         mr = next((m for m in mrs if m.get("state") == "merged"), mrs[0] if mrs else None)
         if mr:
@@ -91,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         warn(f"could not read pipeline/MR data ({type(exc).__name__}); writing a partial card")
 
-    card = render(jobs, mr, issue, pipeline_url)
+    card = render(jobs, mr, issue, pipeline_url, monitor)
     Path("journey-card.md").write_text(card, encoding="utf-8")
     print(card)
 
