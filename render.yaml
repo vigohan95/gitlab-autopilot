@@ -1,0 +1,40 @@
+# Render Blueprint — creates the two free web services Autopilot deploys to.
+# One-time: Render dashboard > New > Blueprint > select this repository > Apply.
+# autoDeploy is off on purpose: the GitLab pipeline decides what and when to deploy
+# (scripts/deploy_render.py deploys an exact commit; rollback deploys the release tag's commit).
+services:
+  - type: web
+    name: pulse-staging
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: false
+    healthCheckPath: /healthz
+    envVars:
+      - key: PULSE_PORT
+        value: "10000"
+      - key: PULSE_INTERVAL
+        value: "300"
+      - key: PULSE_SITES
+        value: "gitlab=https://gitlab.com/,render=https://render.com/"
+      - key: PULSE_VERSION
+        value: "dev"
+
+  - type: web
+    name: pulse-prod
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: main
+    autoDeploy: false
+    healthCheckPath: /healthz
+    envVars:
+      - key: PULSE_PORT
+        value: "10000"
+      - key: PULSE_INTERVAL
+        value: "300"
+      - key: PULSE_SITES
+        value: "gitlab=https://gitlab.com/,render=https://render.com/"
+      - key: PULSE_VERSION
+        value: "dev"

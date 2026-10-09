@@ -59,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--expect-version", help="fail if production reports a different version")
     ap.add_argument("--report", default="monitor-report.json")
     ap.add_argument("--retries", type=int, default=3)
+    ap.add_argument("--backoff", type=float, default=5.0, help="seconds between attempts (free hosts cold-start ~60s)")
+    ap.add_argument(
+        "--any-env", action="store_true", help="apply --expect-version to every target, not only production"
+    )
     args = ap.parse_args(argv)
 
     targets = [t.split("=", 1) for t in args.target if "=" in t]
@@ -67,11 +71,11 @@ def main(argv: list[str] | None = None) -> int:
         json.dump({"ts": datetime.now(UTC).isoformat(), "targets": [], "ok": True}, open(args.report, "w"))
         return 0
 
-    results = [probe_target(name, url, retries=args.retries) for name, url in targets]
+    results = [probe_target(name, url, retries=args.retries, backoff=args.backoff) for name, url in targets]
     all_ok = all(r["ok"] for r in results)
     if args.expect_version:
         for r in results:
-            if r["name"] == "production" and r["version"] not in (None, args.expect_version):
+            if (args.any_env or r["name"] == "production") and r["version"] not in (None, args.expect_version):
                 r["ok"] = False
                 r["checks"].append({"path": "/version", "ok": False, "error": f"expected {args.expect_version}"})
                 all_ok = False

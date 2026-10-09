@@ -94,7 +94,7 @@ def test_monitor_main_writes_report_and_exit_code(tmp_path, monkeypatch):
     monkeypatch.setattr(
         monitor,
         "probe_target",
-        lambda n, u, retries=3: {
+        lambda n, u, retries=3, backoff=5.0: {
             "name": n,
             "url": u,
             "ok": n == "staging",
@@ -134,3 +134,34 @@ def test_codequality_conversion(tmp_path):
 )
 def test_space_url(space, url):
     assert space_url(space) == url
+
+
+def test_deploy_hf_402_is_dry_run(monkeypatch, tmp_path, capsys):
+    import types
+
+    import deploy_hf
+
+    class Resp:
+        status_code = 402
+
+    class FakeErr(Exception):
+        def __init__(self):
+            super().__init__("402")
+            self.response = Resp()
+
+    class FakeApi:
+        def __init__(self, token=None):
+            pass
+
+        def create_repo(self, *a, **kw):
+            raise FakeErr()
+
+    fake_hub = types.SimpleNamespace(HfApi=FakeApi)
+    fake_errors = types.SimpleNamespace(HfHubHTTPError=FakeErr)
+    monkeypatch.setitem(sys.modules, "huggingface_hub", fake_hub)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.errors", fake_errors)
+    monkeypatch.setenv("HF_TOKEN", "hf_x")
+    monkeypatch.chdir(tmp_path)
+    assert deploy_hf.main(["--env", "staging", "--space", "u/pulse-staging", "--version", "0.1.1", "--wait", "0"]) == 0
+    assert "HTTP 402" in capsys.readouterr().out
+    assert "DEPLOY_URL=https://u-pulse-staging.hf.space" in (tmp_path / "deploy.env").read_text()

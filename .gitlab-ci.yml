@@ -8,7 +8,7 @@
 #   monitor   scheduled monitor -> incident -> rollback
 #
 # Policy: AUTOPILOT.md. Flows/agents: .gitlab/duo/. Nothing here costs money: GitLab hosted
-# runners (free minutes) + Hugging Face free Docker Spaces.
+# runners (free minutes) + Render free web services.
 
 stages:
   - test
@@ -251,6 +251,8 @@ release:
   rules: *rules_main
 
 # ==================================================================== configure
+# Provider is chosen by scripts/deploy.py: Render (RENDER_API_KEY, free web services, deploy by commit),
+# else Hugging Face (HF_TOKEN; Docker Spaces are paid now -> degrades to dry run), else dry run.
 .deploy:
   extends: .python
   before_script:
@@ -258,7 +260,6 @@ release:
     - |
       if [ -n "$ROLLBACK_TO" ]; then
         echo "ROLLBACK to $ROLLBACK_TO (AUTOPILOT §6.2)"
-        python scripts/fetch_ref.py --ref "$ROLLBACK_TO" --paths pulse Dockerfile requirements.txt
         export DEPLOY_VERSION="${ROLLBACK_TO#v}"
       else
         export DEPLOY_VERSION="${VERSION:-$CI_COMMIT_SHORT_SHA}"
@@ -269,7 +270,7 @@ deploy-staging:
   stage: deploy-staging
   extends: .deploy
   script:
-    - python scripts/deploy_hf.py --env staging --space "${HF_STAGING_SPACE:-example/pulse-staging}" --version "$DEPLOY_VERSION"
+    - python scripts/deploy.py --env staging --version "$DEPLOY_VERSION"
   environment:
     name: staging
     url: $PULSE_STAGING_URL
@@ -285,8 +286,10 @@ verify-staging:
   extends: .python
   script:
     - |
-      if [ -z "$PULSE_STAGING_URL" ]; then echo "PULSE_STAGING_URL not set; staging verification skipped (dry run)"; exit 0; fi
-      python scripts/monitor.py --target "staging=$PULSE_STAGING_URL" --report staging-report.json
+      if [ "$DEPLOY_MODE" != "live" ]; then echo "skipped: staging was not deployed (DEPLOY_MODE=${DEPLOY_MODE:-unset})"; exit 0; fi
+      URL="${DEPLOY_URL:-$PULSE_STAGING_URL}"
+      if [ -z "$URL" ]; then echo "skipped: no staging URL"; exit 0; fi
+      python scripts/monitor.py --target "staging=$URL" --expect-version "$DEPLOY_VERSION" --any-env --retries 5 --backoff 20 --report staging-report.json
   artifacts:
     when: always
     paths:
@@ -299,7 +302,7 @@ deploy-production:
   extends: .deploy
   needs: [deploy-staging, verify-staging]
   script:
-    - python scripts/deploy_hf.py --env production --space "${HF_PRODUCTION_SPACE:-example/pulse-prod}" --version "$DEPLOY_VERSION"
+    - python scripts/deploy.py --env production --version "$DEPLOY_VERSION"
   environment:
     name: production
     url: $PULSE_PRODUCTION_URL
@@ -319,7 +322,7 @@ monitor:
       ARGS=""
       [ -n "$PULSE_STAGING_URL" ] && ARGS="$ARGS --target staging=$PULSE_STAGING_URL"
       [ -n "$PULSE_PRODUCTION_URL" ] && ARGS="$ARGS --target production=$PULSE_PRODUCTION_URL"
-      python scripts/monitor.py $ARGS
+      python scripts/monitor.py $ARGS --retries 5 --backoff 20
   artifacts:
     when: always
     paths:

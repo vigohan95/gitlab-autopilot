@@ -86,16 +86,32 @@ def main(argv: list[str] | None = None) -> int:
     url = space_url(args.space)
     source = os.environ.get("CI_PROJECT_URL", "https://gitlab.com")
     token = os.environ.get("HF_TOKEN", "")
-    Path("deploy.env").write_text(f"DEPLOY_URL={url}\nDEPLOY_VERSION={args.version}\n", encoding="utf-8")
+    Path("deploy.env").write_text(
+        f"DEPLOY_URL={url}\nDEPLOY_VERSION={args.version}\nDEPLOY_MODE=dry-run\nDEPLOY_PROVIDER=huggingface\n",
+        encoding="utf-8",
+    )
 
     if not token:
         print(f"DRY RUN (HF_TOKEN not set): would deploy pulse {args.version} to {args.space} -> {url}")
         return 0
 
     from huggingface_hub import HfApi
+    from huggingface_hub.errors import HfHubHTTPError
 
     api = HfApi(token=token)
-    api.create_repo(args.space, repo_type="space", space_sdk="docker", exist_ok=True, private=False)
+    try:
+        api.create_repo(args.space, repo_type="space", space_sdk="docker", exist_ok=True, private=False)
+    except HfHubHTTPError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 402:
+            # Hugging Face now requires a PRO subscription for Docker Spaces on free CPU (HTTP 402).
+            # Paid hosting is out of scope (zero-cost project): record the environment, skip the upload.
+            print(
+                f"::warning:: Hugging Face refused to create {args.space}: Docker Spaces need a paid PRO plan "
+                "(HTTP 402). Deployment skipped (dry run); use the Render deployer (RENDER_API_KEY) instead."
+            )
+            return 0
+        raise
     for key, value in {"PULSE_VERSION": args.version, "PULSE_SITES": args.sites, "PULSE_INTERVAL": "300"}.items():
         api.add_space_variable(args.space, key, value)
     if args.chaos:
@@ -117,6 +133,10 @@ def main(argv: list[str] | None = None) -> int:
             delete_patterns=["pulse/**"],
         )
     print(f"uploaded pulse {args.version} to {args.space}; url={url}")
+    Path("deploy.env").write_text(
+        f"DEPLOY_URL={url}\nDEPLOY_VERSION={args.version}\nDEPLOY_MODE=live\nDEPLOY_PROVIDER=huggingface\n",
+        encoding="utf-8",
+    )
 
     if args.wait > 0:
         if not wait_healthy(url, args.version, args.wait):

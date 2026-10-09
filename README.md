@@ -98,7 +98,7 @@ Two layers, on purpose:
 | **package** | `build-image` → Container Registry; `build-wheel` → PyPI Package Registry | Deploy > Container Registry, Package Registry |
 | **secure** | SAST, Secret Detection, Dependency Scanning, Container Scanning, `pip-audit`; failures → Security Fixer flow | MR security widget; Secure > Vulnerability report; fix MRs labelled `security-fix` |
 | **release** | `release-cli` cuts `vX.Y.Z` with generated notes and asset links when the version changes | Deploy > Releases |
-| **configure** | Environments `staging` → `production` on free Hugging Face Docker Spaces, `resource_group`s, rollback job | Operate > Environments (deployment history) |
+| **configure** | Environments `staging` → `production` on free Render web services (deploy by commit), `resource_group`s, rollback job | Operate > Environments (deployment history) |
 | **monitor** | scheduled `monitor` job probes `/healthz` and `/version`; red → `incident` job opens a GitLab Incident and triggers rollback; Incident Responder flow writes the RCA | Monitor > Incidents; the rollback pipeline (`ROLLBACK_TO`) |
 | **govern** | `policy-check` enforces AUTOPILOT.md on every MR; `auto-merge` cites the rules; `audit-trail` artifact; MR approval rule; GitLab audit events; journey card on the issue | MR notes; Secure > Audit events; the journey card |
 
@@ -110,7 +110,7 @@ Everything below is a page in this project; nothing needs to be run locally.
 |---|---|---|
 | 1 | [Pipelines](https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines) → the latest `main` pipeline | 12 stages left to right: `version` → `test` `lint` → `semgrep-sast` `secret_detection` `pip-audit` → `build-image` → `container_scanning` `build-wheel` → `release` → `deploy-staging` → `verify-staging` → `deploy-production` → `journey-card` `audit-trail` → `demo:*` (manual). Every job is green; click any for its log. |
 | 2 | [Releases](https://gitlab.com/hanwg666/gitlab-autopilot/-/releases) · [Container Registry](https://gitlab.com/hanwg666/gitlab-autopilot/container_registry) · [Package Registry](https://gitlab.com/hanwg666/gitlab-autopilot/-/packages) | `v0.1.0`, `v0.1.1` cut by `release-cli` with generated notes and asset links; the image tagged by commit SHA, `latest` and `vX.Y.Z`; the `pulse-monitor` wheel per version. |
-| 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until the Hugging Face token is present, then live URLs). |
+| 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until `RENDER_API_KEY` is present, then live `onrender.com` URLs). |
 | 3 | [Merge requests (all)](https://gitlab.com/hanwg666/gitlab-autopilot/-/merge_requests?scope=all&state=all&label_name[]=autopilot) | each `autopilot` MR carries the **policy-check** note (rules §1.1 §2.1 §2.2 §3.4 §3.5 with pass/fail), the **auto-merge** note ("Merging when this pipeline succeeds", §3.2 §3.3), and the labels `autopilot::approved` / `autopilot::needs-human`. The `security-fix` MR shows the red `pip-audit` run and the fixing commit. |
 | 4 | [Issues](https://gitlab.com/hanwg666/gitlab-autopilot/-/issues?scope=all&state=all&label_name[]=autopilot) · [Incidents](https://gitlab.com/hanwg666/gitlab-autopilot/-/incidents) | the originating issue closed with its **journey card** (stage table, durations, retries); the incident opened by the monitor with the report, the rollback target and the `ROLLBACK_TO` pipeline link. |
 | 4 | [`AUTOPILOT.md`](https://gitlab.com/hanwg666/gitlab-autopilot/-/blob/main/AUTOPILOT.md) · [`scripts/policy.py`](https://gitlab.com/hanwg666/gitlab-autopilot/-/blob/main/scripts/policy.py) | the policy in prose and in the YAML block the CI job enforces; every agent/script note ends with `autopilot: rules=[…]` pointing back here. |
@@ -149,14 +149,14 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 pulse/              the service (FastAPI, SQLite, probes)
 tests/              pytest (no network; httpx.MockTransport)
 scripts/            CI helpers: policy.py, automerge.py, monitor.py, incident.py,
-                    deploy_hf.py, release_notes.py, journey_card.py, codequality.py,
+                    deploy.py, deploy_render.py, release_notes.py, journey_card.py, codequality.py,
                     start_flow.py, check_ci_schema.py, gitlab_api.py
 mcp_server/         read-only MCP server for the Incident Responder
 .gitlab/duo/        flows, agents, triggers, mcp.json, agent-config.yml, review instructions
 .gitlab-ci.yml      the eleven-stage pipeline
 AUTOPILOT.md        the autonomy policy (prose + YAML)
 AGENTS.md           conventions for agents
-Dockerfile          non-root image, HEALTHCHECK, port 7860 (Hugging Face Spaces)
+Dockerfile          non-root image, HEALTHCHECK, PULSE_PORT (7860 local, 10000 on Render)
 ```
 
 ## Reproduce in your own group
@@ -171,12 +171,11 @@ Everything is free-tier; no card is needed anywhere.
    | variable | value | flags |
    |---|---|---|
    | `AUTOPILOT_TOKEN` | project access token, scope `api`, role Maintainer | masked, protected |
-   | `HF_TOKEN` | Hugging Face write token | masked, protected |
-   | `HF_STAGING_SPACE` / `HF_PRODUCTION_SPACE` | `<hf-user>/pulse-staging`, `<hf-user>/pulse-prod` | — |
-   | `PULSE_STAGING_URL` / `PULSE_PRODUCTION_URL` | `https://<hf-user>-pulse-staging.hf.space`, `…-pulse-prod.hf.space` | — |
+   | `RENDER_API_KEY` | Render API key (Account Settings > API Keys); the two free services come from `render.yaml` (New > Blueprint) | masked, protected |
+   | `PULSE_STAGING_URL` / `PULSE_PRODUCTION_URL` | the `onrender.com` URLs printed by the first deploy (used by the scheduled monitor) | — |
    | `PULSE_CHAOS` | `healthz` — **only** on environment `production`, only during the demo (AUTOPILOT §7) | environment-scoped |
 
-   Without `HF_TOKEN` the deploy jobs dry-run and still record environments;
+   Without `RENDER_API_KEY` the deploy jobs dry-run and still record environments;
    without `AUTOPILOT_TOKEN` the scripts that write to GitLab print what they
    would do.
 3. **Runners:** GitLab hosted runners (default). The flow jobs need the
