@@ -38,7 +38,7 @@ def build(action: str, branch: str, message: str) -> dict:
     for rel in tracked_files():
         data = (ROOT / rel).read_bytes()
         try:
-            content = data.decode("utf-8")
+            content = data.decode("utf-8").replace("\r\n", "\n")  # always push LF
             if "\0" in content:
                 raise UnicodeDecodeError("utf-8", b"", 0, 1, "binary")
             actions.append({"action": action, "file_path": rel, "content": content, "encoding": "text"})
