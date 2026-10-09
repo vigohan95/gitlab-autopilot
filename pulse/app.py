@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, HttpUrl, field_validator
 
 from . import __version__
@@ -127,10 +127,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "site name already exists")
         return store.add_site(body.name, str(body.url)).__dict__
 
-    @app.delete("/api/sites/{site_id}", status_code=204)
-    async def delete_site(site_id: int, request: Request) -> None:
+    @app.delete("/api/sites/{site_id}", status_code=204, response_class=Response)
+    async def delete_site(site_id: int, request: Request) -> Response:
         if not request.app.state.store.delete_site(site_id):
             raise HTTPException(404, "no such site")
+        return Response(status_code=204)
 
     @app.post("/api/check")
     async def check_now(request: Request) -> list[dict]:

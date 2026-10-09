@@ -23,8 +23,8 @@ def test_bump_patch_on_real_init():
 
 def test_pin_requirement_replace_and_add():
     req = "fastapi==0.143.0\nuvicorn[standard]==0.54.0\nhttpx==0.28.1\n"
-    new, prev = demo.pin_requirement(req, "fastapi", "0.115.12")
-    assert prev == "0.143.0" and "fastapi==0.115.12\n" in new and "0.143.0" not in new
+    new, prev = demo.pin_requirement(req, "fastapi", "0.125.0")
+    assert prev == "0.143.0" and "fastapi==0.125.0\n" in new and "0.143.0" not in new
     new, prev = demo.pin_requirement(req, "uvicorn", "0.30.0")
     assert prev == "0.54.0" and "uvicorn[standard]==0.30.0" in new
     new, prev = demo.pin_requirement(req, "starlette", "0.50.0")

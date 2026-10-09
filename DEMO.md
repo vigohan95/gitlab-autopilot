@@ -31,8 +31,8 @@ With Duo enabled, A1 is replaced by just creating the issue (F1 does the branch+
 
 | step | action | what to watch | ~time |
 |---|---|---|---|
-| B1 | `demo.py security` (or `demo:security`) | branch `demo/security-…` pins `fastapi==0.115.12`; MR with label `autopilot` | 10 s |
-| B2 | MR pipeline | **pip-audit red** (starlette 0.46.x: PYSEC-2026-248/249), `auto-merge` not run (needs pip-audit) → MR cannot merge | 6 min |
+| B1 | `demo.py security` (or `demo:security`) | branch `demo/security-…` pins `fastapi==0.125.0`; MR with label `autopilot` | 10 s |
+| B2 | MR pipeline | **pip-audit red** (starlette 0.50.x: PYSEC-2026-2280/2281, 248/249), `auto-merge` not run (needs pip-audit) → MR cannot merge | 6 min |
 | B3 | `demo.py security --fix` (or `demo:security-fix`) | commit restores the current pin on the same branch, label `security-fix`, note citing §4.1 §4.2 §2.2 | 10 s |
 | B4 | MR pipeline re-runs | all green → policy-check → auto-merge → merged | 6 min |
 

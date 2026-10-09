@@ -165,6 +165,7 @@ sast:
 
 secret_detection:
   stage: secure
+  needs: []
   rules: *rules_app
 
 dependency_scanning:
@@ -173,6 +174,7 @@ dependency_scanning:
 pip-audit:
   stage: secure
   extends: .python
+  needs: []
   script:
     - pip-audit -r requirements.txt --strict --desc on -f json -o pip-audit.json || AUDIT_RC=$?
     - pip-audit -r requirements.txt --strict --desc on || true

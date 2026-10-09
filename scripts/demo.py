@@ -4,7 +4,7 @@ Scenes
   mr        issue (label autopilot) -> branch -> patch-version bump -> MR "Closes #n"
             -> MR pipeline: policy-check labels autopilot::approved -> auto-merge merges
             -> main pipeline: release v0.1.(n+1) -> journey-card closes the issue
-  security  branch pins fastapi==0.115.12 (starlette 0.46 has PYSEC-2026-248/249)
+  security  branch pins fastapi==0.125.0 (pulls starlette 0.50 with PYSEC-2026-2280/2281/248/249)
             -> pip-audit goes red -> MR is blocked; `--fix` pushes the corrected pin
             (what the Security Fixer flow does when Duo is enabled)
   chaos on  sets PULSE_CHAOS=healthz on environment `production` (or --fake-url when
@@ -40,7 +40,7 @@ LABELS = {
     "rca::done": "#2da160",
 }
 SCHEDULE_DESC = "monitor"
-VULNERABLE_FASTAPI = "0.115.12"
+VULNERABLE_FASTAPI = "0.125.0"
 FAKE_PROD_URL = "https://pulse-chaos.invalid"
 
 
@@ -240,8 +240,8 @@ def scene_security(d: Demo, fix: bool = False) -> int:
     mr = d.open_mr(
         branch,
         f"deps: pin fastapi=={VULNERABLE_FASTAPI}",
-        f"Demo of the secure stage: `fastapi=={VULNERABLE_FASTAPI}` pulls starlette 0.46.x "
-        f"(PYSEC-2026-248/249). `pip-audit` must fail and the merge gate must hold (AUTOPILOT §3.3). "
+        f"Demo of the secure stage: `fastapi=={VULNERABLE_FASTAPI}` pulls starlette 0.50.x "
+        f"(PYSEC-2026-2280/2281, 248/249). `pip-audit` must fail and the merge gate must hold (AUTOPILOT §3.3). "
         f"Previous pin: `{prev}`.\n\nautopilot: rules=[§3.3]",
         ["autopilot"],
     )
