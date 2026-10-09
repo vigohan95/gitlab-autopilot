@@ -68,7 +68,8 @@ def test_monitor_probe_target(monkeypatch):
             return httpx.Response(200, json={"status": "ok"})
         return httpx.Response(200, json={"name": "pulse", "version": "0.1.0"})
 
-    monkeypatch.setattr(httpx, "Client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler), **kw))
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
     res = monitor.probe_target("staging", "https://s.test/", retries=1)
     assert res["ok"] and res["version"] == "0.1.0" and res["attempts"] == 1
 
@@ -81,7 +82,8 @@ def test_monitor_probe_target_down(monkeypatch):
             return httpx.Response(503, json={"status": "degraded"})
         return httpx.Response(200, json={"version": "0.1.0"})
 
-    monkeypatch.setattr(httpx, "Client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler), **kw))
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
     res = monitor.probe_target("production", "https://p.test", retries=2)
     assert not res["ok"] and res["attempts"] == 2
     assert res["checks"][0]["status"] == 503

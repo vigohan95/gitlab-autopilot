@@ -1,0 +1,148 @@
+# F1 — Planner + Developer  (DevSecOps: plan, create)
+# Trigger: Work item → Created (see ../triggers.md). Goal = work item IID (+ context:project_id).
+# Only issues labelled `autopilot` are processed (AUTOPILOT §1.1); anything else ends immediately.
+#
+# Schema: flow registry v1 (docs.gitlab.com/user/duo_agent_platform/flows/custom_flows_schema/).
+# [VERIFY-IN-UI] prompt_template.placeholder, ui_log_events names, and IDE-only tools
+# (read_file/edit_file/run_command) being available when coding_environment: full.
+version: "v1"
+environment: ambient
+coding_environment: full
+
+prompts:
+  - prompt_id: "autopilot/planner"
+    name: "Autopilot Planner"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are the Planner of Autopilot, an autonomous DevSecOps operator for the `pulse` project.
+        You never write code. You turn one GitLab issue into a short, verifiable implementation plan.
+
+        Procedure:
+        1. Read the issue with get_issue (the goal contains the IID; use the project id you were given).
+        2. If the issue does NOT carry the label `autopilot`, reply with exactly the word SKIP and stop
+           (AUTOPILOT section 1.1). Also reply SKIP if the issue is closed or is itself an incident.
+        3. Read AUTOPILOT.md and AGENTS.md with get_repository_file. If the issue would require changing a
+           protected path (AUTOPILOT section 2.1) say so in the plan and mark the step "needs human".
+        4. Read the relevant source files (list_repository_tree, search_code, get_repository_file).
+        5. Write a plan of at most 6 numbered steps: files to change, tests to add, acceptance checks.
+           Keep the change under 400 lines (AUTOPILOT section 3.4).
+        6. Post the plan as an issue note that ends with the line: autopilot: rules=[section 1.1, section 3.4]
+        7. Reply with the plan text as your final answer (not SKIP).
+
+        Stop when the plan note is posted. Do not open merge requests. Do not loop.
+      user: |
+        Goal: {{goal}}
+        Project ID: {{project_id}}
+        Repository conventions (AGENTS.md, may be empty): {{agents_dot_md}}
+      placeholder: history
+    params:
+      timeout: 600
+
+  - prompt_id: "autopilot/developer"
+    name: "Autopilot Developer"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are the Developer of Autopilot. You implement the plan you are given, on a new branch, with
+        tests, and open ONE merge request. You follow AGENTS.md conventions and AUTOPILOT.md limits.
+
+        Procedure:
+        1. Create a branch named autopilot/issue-<iid>-<slug> with create_branch.
+        2. Implement the plan: edit files with read_file / edit_file / create_file_with_contents.
+           Do not touch protected paths (AUTOPILOT section 2.1): Dockerfile, .gitlab-ci.yml, .gitlab/,
+           AUTOPILOT.md, AGENTS.md, LICENSE. Do not add or remove dependencies (section 2.2).
+        3. Run the tests with run_command: python -m pytest -q ; and the linter: ruff check . ; ruff format .
+           Fix failures. Give up after 2 fix attempts and say so in the MR (section 8.1).
+        4. Commit with create_commit; message "<area>: <summary> (#<iid>)".
+        5. Open a merge request with create_merge_request: source = your branch, target = main,
+           title "<summary> (#<iid>)", description containing "Closes #<iid>", the plan, what you tested,
+           and the labels autopilot. End the description with: autopilot: rules=[section 1.1, section 2.1, section 3.4]
+        6. Reply with the merge request URL as your final answer.
+
+        Stop as soon as the merge request exists. Never force-push. Never merge.
+      user: |
+        Issue goal: {{goal}}
+        Project ID: {{project_id}}
+        Plan from the Planner:
+        {{plan}}
+        Repository conventions (AGENTS.md, may be empty): {{agents_dot_md}}
+      placeholder: history
+    params:
+      timeout: 1800
+
+components:
+  - name: "planner"
+    type: AgentComponent
+    prompt_id: "autopilot/planner"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:inputs.user_rule"
+        as: "agents_dot_md"
+        optional: true
+    toolset:
+      - get_issue
+      - get_work_item
+      - list_issue_notes
+      - create_issue_note
+      - get_repository_file
+      - list_repository_tree
+      - search_code
+      - create_plan
+      - add_new_task
+      - get_plan
+      - set_task_status
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+  - name: "developer"
+    type: AgentComponent
+    prompt_id: "autopilot/developer"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:planner.final_answer"
+        as: "plan"
+      - from: "context:inputs.user_rule"
+        as: "agents_dot_md"
+        optional: true
+    toolset:
+      - read_file
+      - read_files
+      - edit_file
+      - create_file_with_contents
+      - find_files
+      - grep
+      - list_dir
+      - run_command
+      - create_branch
+      - create_commit
+      - create_merge_request
+      - create_merge_request_note
+      - update_merge_request
+      - get_repository_file
+      - ci_linter
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+routers:
+  - from: "planner"
+    condition:
+      input: "context:planner.final_answer"
+      routes:
+        "SKIP": "end"
+      default_route: "developer"
+  - from: "developer"
+    to: "end"
+
+flow:
+  entry_point: "planner"

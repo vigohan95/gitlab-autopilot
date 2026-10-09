@@ -1,0 +1,15 @@
+# Execution environment for flows that run as CI/CD jobs (read from the default branch only).
+# docs.gitlab.com/user/duo_agent_platform/flows/execution/#agent-configuration-file
+# [VERIFY-IN-UI] the `image` key name — generate the file once from Settings > General > GitLab Duo >
+# Agent configuration file > Generate and merge any extra keys GitLab adds.
+image: python:3.12
+setup_script:
+  - pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+  - python -m pytest -q --no-header -p no:cacheprovider tests/test_store.py
+  - echo "pulse environment ready"
+cache:
+  key:
+    files:
+      - requirements-dev.txt
+  paths:
+    - .cache/pip

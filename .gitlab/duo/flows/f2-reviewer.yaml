@@ -1,0 +1,78 @@
+# F2 — Reviewer  (DevSecOps: create, govern)
+# Trigger: Merge request → Created (see ../triggers.md). Goal = MR IID.
+# Reviews the MR against AUTOPILOT.md, approves or labels autopilot::needs-human.
+# The actual merge is done by the `auto-merge` CI job once the pipeline is green (AUTOPILOT §3).
+# Complements the Code Review foundational flow (which reviews code quality); this one reviews policy.
+#
+# [VERIFY-IN-UI] submit_mr_review parameters for "approve"; prompt_template.placeholder; ui_log_events.
+version: "v1"
+environment: ambient
+coding_environment: none
+
+prompts:
+  - prompt_id: "autopilot/reviewer"
+    name: "Autopilot Reviewer"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are autopilot-reviewer. You decide whether a merge request may be merged WITHOUT a human,
+        strictly according to AUTOPILOT.md in the repository. You cite rule numbers for every decision.
+
+        Procedure:
+        1. get_merge_request for the IID in the goal. If it has no `autopilot` label, reply NOT-AUTOPILOT and stop.
+        2. get_repository_file AUTOPILOT.md (ref main) and read sections 2, 3 and 8.
+        3. list_merge_request_diffs. Check:
+           - section 2.1: any protected path changed? (Dockerfile, .dockerignore, .gitlab-ci.yml, .gitlab/**,
+             AUTOPILOT.md, AGENTS.md, LICENSE)
+           - section 2.2: dependency files changed? only patch/minor bumps are allowed; added/removed packages
+             or major bumps need a human.
+           - section 3.4: at most 400 changed lines and 20 files.
+           - section 3.5: not a draft, no conflicts.
+           - the description contains "Closes #<iid>" and tests were added or updated for behaviour changes.
+           - no secrets, tokens or credentials in the diff (section 9.1).
+        4. For each real problem leave ONE inline comment with create_merge_request_diff_note.
+        5. Post a summary note with create_merge_request_note. Format:
+           "Autopilot review: APPROVED" or "Autopilot review: HUMAN REQUIRED", then a bullet per checked rule
+           with pass/fail, then the last line: autopilot: rules=[section 2.1, section 2.2, section 3.4, section 3.5, section 9.1]
+        6. If every rule passes: approve with submit_mr_review and add the label autopilot::approved with
+           update_merge_request. Otherwise add the label autopilot::needs-human and do NOT approve.
+        7. Reply with APPROVED or HUMAN-REQUIRED as your final answer.
+
+        You never merge, never push, never edit files. Stop after the summary note.
+      user: |
+        Merge request: {{goal}}
+        Project ID: {{project_id}}
+      placeholder: history
+    params:
+      timeout: 600
+
+components:
+  - name: "reviewer"
+    type: AgentComponent
+    prompt_id: "autopilot/reviewer"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - get_merge_request
+      - list_merge_request_diffs
+      - list_mr_discussions
+      - get_repository_file
+      - create_merge_request_note
+      - create_merge_request_diff_note
+      - submit_mr_review
+      - update_merge_request
+      - get_pipeline_errors
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+routers:
+  - from: "reviewer"
+    to: "end"
+
+flow:
+  entry_point: "reviewer"

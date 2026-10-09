@@ -55,14 +55,14 @@ def test_tools_are_read_only_views(env):
 
 
 def test_mcp_protocol_lists_tools_and_calls(env):
-    """Drive the server through a real in-memory MCP client session."""
-    from mcp.shared.memory import create_connected_server_and_client_session
+    """Drive the server through a real in-memory MCP client (SDK 2.x Client)."""
+    from mcp.client.client import Client
 
     async def run():
-        async with create_connected_server_and_client_session(pulse_mcp.mcp._mcp_server) as session:
-            tools = await session.list_tools()
+        async with Client(pulse_mcp.mcp) as client:
+            tools = await client.list_tools()
             names = sorted(t.name for t in tools.tools)
-            result = await session.call_tool("pulse_health", {"env": "production"})
+            result = await client.call_tool("pulse_health", {"env": "production"})
             return names, result
 
     names, result = asyncio.run(run())
@@ -74,6 +74,9 @@ def test_mcp_protocol_lists_tools_and_calls(env):
         "pulse_recent_checks",
         "pulse_summary",
     ]
-    assert not result.isError
-    payload = json.loads(result.content[0].text)
+    assert not getattr(result, "is_error", getattr(result, "isError", False))
+    structured = getattr(result, "structured_content", None) or getattr(result, "structuredContent", None)
+    payload = structured or json.loads(result.content[0].text)
+    if "result" in payload and "healthy" not in payload:
+        payload = payload["result"]
     assert payload["healthy"] is True

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pulse-readonly": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "mcp_server.pulse_mcp", "--transport", "stdio"],
+      "env": {
+        "PULSE_ENV_STAGING_URL": "https://hanwg666-pulse-staging.hf.space",
+        "PULSE_ENV_PRODUCTION_URL": "https://hanwg666-pulse-prod.hf.space",
+        "PULSE_GITLAB_PROJECT": "123-group8634541/123-project"
+      },
+      "approvedTools": true
+    }
+  }
+}

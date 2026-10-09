@@ -14,6 +14,9 @@ Run as a remote server (streamable HTTP, for the AI Catalog MCP registration):
 
 Environments are discovered from ``PULSE_ENV_<NAME>_URL`` variables, e.g.
 ``PULSE_ENV_PRODUCTION_URL=https://user-pulse-prod.hf.space``.
+
+Written against the Python MCP SDK 2.x (``MCPServer``); falls back to the 1.x
+``FastMCP`` name so the file runs on either major version.
 """
 
 from __future__ import annotations
@@ -22,11 +25,16 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import httpx
-from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP("pulse-readonly", instructions="Read-only observability for pulse deployments and releases.")
+try:  # MCP SDK 2.x
+    from mcp.server.mcpserver import MCPServer
+except ModuleNotFoundError:  # pragma: no cover - MCP SDK 1.x
+    from mcp.server.fastmcp import FastMCP as MCPServer  # type: ignore[no-redef]
+
+mcp = MCPServer("pulse-readonly", instructions="Read-only observability for pulse deployments and releases.")
 
 _TIMEOUT = 15.0
 
@@ -63,16 +71,15 @@ def pulse_health(env: str) -> dict:
     base = _base(env)
     out: dict = {"env": env, "url": base}
     for path in ("/healthz", "/version"):
+        started = time.perf_counter()
         try:
             r = _get(base + path)
-            out[path] = {
-                "status": r.status_code,
-                "body": _json_or_text(r),
-                "latency_ms": round(r.elapsed.total_seconds() * 1000, 1),
-            }
+            latency = round((time.perf_counter() - started) * 1000, 1)
+            out[path] = {"status": r.status_code, "body": _json_or_text(r), "latency_ms": latency}
         except httpx.HTTPError as exc:
             out[path] = {"status": None, "error": type(exc).__name__}
-    out["healthy"] = out["/healthz"].get("status") == 200 and (out["/healthz"].get("body") or {}).get("status") == "ok"
+    health = out["/healthz"]
+    out["healthy"] = health.get("status") == 200 and (health.get("body") or {}).get("status") == "ok"
     return out
 
 
@@ -128,10 +135,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)
     args = ap.parse_args(argv)
-    if args.transport != "stdio":
-        mcp.settings.host = args.host
-        mcp.settings.port = args.port
-    mcp.run(transport=args.transport)
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        settings = getattr(mcp, "settings", None)
+        if settings is not None:  # SDK 1.x / 2.x expose host/port on settings
+            settings.host = args.host
+            settings.port = args.port
+        mcp.run(transport=args.transport)
     return 0
 
 

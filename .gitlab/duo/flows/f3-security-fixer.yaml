@@ -1,0 +1,127 @@
+# F3 — Security Fixer  (DevSecOps: secure, create)
+# Trigger: Pipeline events → Failed (see ../triggers.md). Goal = full pipeline webhook payload.
+# Step 1 triages the failure; only security-stage failures (sast, secret_detection,
+# dependency_scanning, pip-audit, container_scanning) continue. Other failures end here —
+# the Fix CI/CD Pipeline foundational flow handles those from the pipeline page.
+# Step 2 opens a fix MR within AUTOPILOT §4 limits.
+#
+# [VERIFY-IN-UI] conditional router on an agent's free-text final_answer (we force exact tokens);
+# availability of list_security_findings / get_security_finding_details on the group's tier.
+version: "v1"
+environment: ambient
+coding_environment: full
+
+prompts:
+  - prompt_id: "autopilot/security-triage"
+    name: "Autopilot Security Triage"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You classify a failed GitLab pipeline. The goal is the pipeline event payload (JSON).
+        1. Extract the pipeline id, project id, ref and the failed job names (get_pipeline_failing_jobs if needed).
+        2. If the pipeline source is "schedule" (the monitor pipeline), reply exactly: MONITOR
+        3. If any failed job is one of sast, semgrep-sast, secret_detection, dependency_scanning,
+           gemnasium-python-dependency_scanning, pip-audit, container_scanning, reply exactly: SECURITY
+        4. Otherwise reply exactly: OTHER
+        Reply with only that single word. Do not post notes.
+      user: |
+        Pipeline event: {{goal}}
+        Project ID: {{project_id}}
+      placeholder: history
+    params:
+      timeout: 300
+
+  - prompt_id: "autopilot/security-fixer"
+    name: "Autopilot Security Fixer"
+    unit_primitives: []
+    prompt_template:
+      system: |
+        You are security-fixer. A security job failed. You open ONE fix merge request within the limits of
+        AUTOPILOT.md section 4 and cite the rules. You never disable a scanner or lower a threshold.
+
+        Procedure:
+        1. From the pipeline event get the pipeline id and ref. get_job_logs of the failed security jobs.
+           If available, list_security_findings / get_security_finding_details for this pipeline.
+        2. Decide the minimal fix:
+           - vulnerable dependency: bump the pin in requirements.txt within patch/minor (section 2.2, 4.2);
+             a required major bump means: open the MR anyway, label autopilot::needs-human, explain.
+           - hard-coded secret: remove it, read the value from an environment variable, say in the MR that the
+             secret must be rotated (section 4.3).
+           - SAST finding: apply the local fix suggested by the finding when it stays inside one function.
+        3. Branch autopilot/security-<pipeline id>, edit, run tests and ruff with run_command, commit,
+           create_merge_request to the ref that failed (main, or the MR source branch), labels autopilot and
+           security-fix, description with the finding, the fix, the rule numbers, and if the failure happened on
+           an autopilot MR branch, mention that MR.
+        4. Post a note on the merge request with the scanner output you relied on.
+        5. Final answer: the merge request URL. End notes with: autopilot: rules=[section 4.1, section 4.2, section 2.2]
+
+        At most 2 attempts to make tests pass (section 8.1). Stop when the MR exists.
+      user: |
+        Pipeline event: {{goal}}
+        Project ID: {{project_id}}
+        Repository conventions: {{agents_dot_md}}
+      placeholder: history
+    params:
+      timeout: 1800
+
+components:
+  - name: "triage"
+    type: AgentComponent
+    prompt_id: "autopilot/security-triage"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+    toolset:
+      - get_pipeline_failing_jobs
+      - get_pipeline_errors
+    ui_log_events:
+      - on_agent_final_answer
+
+  - name: "fixer"
+    type: AgentComponent
+    prompt_id: "autopilot/security-fixer"
+    inputs:
+      - from: "context:goal"
+        as: "goal"
+      - from: "context:project_id"
+        as: "project_id"
+      - from: "context:inputs.user_rule"
+        as: "agents_dot_md"
+        optional: true
+    toolset:
+      - get_pipeline_failing_jobs
+      - get_job_logs
+      - list_security_findings
+      - get_security_finding_details
+      - list_vulnerabilities
+      - get_vulnerability_details
+      - read_file
+      - edit_file
+      - create_file_with_contents
+      - grep
+      - run_command
+      - create_branch
+      - create_commit
+      - create_merge_request
+      - create_merge_request_note
+      - update_merge_request
+      - get_merge_request
+    ui_log_events:
+      - on_agent_final_answer
+      - on_tool_execution_success
+      - on_tool_execution_failed
+
+routers:
+  - from: "triage"
+    condition:
+      input: "context:triage.final_answer"
+      routes:
+        "SECURITY": "fixer"
+      default_route: "end"
+  - from: "fixer"
+    to: "end"
+
+flow:
+  entry_point: "triage"

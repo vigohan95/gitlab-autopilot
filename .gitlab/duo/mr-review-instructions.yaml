@@ -1,0 +1,29 @@
+# Custom instructions for the Code Review foundational flow.
+# docs.gitlab.com/user/duo_agent_platform/customize/review_instructions/
+instructions:
+  - name: Autopilot policy
+    instructions: |
+      This repository is operated by autonomous agents under AUTOPILOT.md. Flag any change that:
+      1. touches Dockerfile, .dockerignore, .gitlab-ci.yml, .gitlab/, AUTOPILOT.md, AGENTS.md or LICENSE (section 2.1)
+      2. adds, removes or major-bumps a dependency (section 2.2)
+      3. exceeds 400 changed lines or 20 files (section 3.4)
+      4. contains a token, password, key or URL with credentials (section 9.1)
+      5. weakens a security scanner (SAST_DISABLED, allow_failure on security jobs, excluded paths)
+
+  - name: Python service code
+    fileFilters:
+      - "pulse/**/*.py"
+      - "mcp_server/**/*.py"
+      - "scripts/**/*.py"
+    instructions: |
+      1. GET endpoints must stay side-effect free; JSON keys are never renamed or removed.
+      2. Every behaviour change needs a test in tests/; tests must not reach the network (use httpx.MockTransport).
+      3. Prefer explicit error handling over bare except; never log secrets.
+      4. Keep functions small; type hints on all public functions.
+
+  - name: Tests
+    fileFilters:
+      - "tests/**/*.py"
+    instructions: |
+      1. Assert on behaviour, not on implementation details.
+      2. Do not loosen an existing assertion to make a test pass; explain in the MR if a change is intended.
