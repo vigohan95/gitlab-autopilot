@@ -140,7 +140,7 @@ routers:
       input: "context:planner.final_answer"
       routes:
         "SKIP": "end"
-      default_route: "developer"
+        "default_route": "developer"
   - from: "developer"
     to: "end"
 

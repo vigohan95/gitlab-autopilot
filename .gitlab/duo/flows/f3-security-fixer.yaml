@@ -119,7 +119,7 @@ routers:
       input: "context:triage.final_answer"
       routes:
         "SECURITY": "fixer"
-      default_route: "end"
+        "default_route": "end"
   - from: "fixer"
     to: "end"
 

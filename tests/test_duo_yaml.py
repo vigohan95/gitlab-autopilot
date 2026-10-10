@@ -63,7 +63,11 @@ def test_flows_have_required_keys_known_tools_and_consistent_routing():
             if "to" in r:
                 targets = [r["to"]]
             else:
-                targets = list(r["condition"]["routes"].values()) + [r["condition"]["default_route"]]
+                # flow registry v1: the fallback lives INSIDE routes as the "default_route" key
+                # (server rejects it as a sibling of routes: "disallowed additional property")
+                assert "default_route" not in r["condition"], f"{f.name}: default_route must be inside routes"
+                assert "default_route" in r["condition"]["routes"], f"{f.name}: routes needs default_route"
+                targets = list(r["condition"]["routes"].values())
             for t in targets:
                 assert t in names or t in ("end", "abort"), f"{f.name}: router target {t} unknown"
         text = f.read_text(encoding="utf-8")

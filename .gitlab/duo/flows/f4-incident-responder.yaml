@@ -106,7 +106,7 @@ routers:
       input: "context:triage.final_answer"
       routes:
         "MONITOR": "responder"
-      default_route: "end"
+        "default_route": "end"
   - from: "responder"
     to: "end"
 

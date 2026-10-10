@@ -100,7 +100,7 @@ routers:
       input: "context:triage.final_answer"
       routes:
         "MAIN": "closer"
-      default_route: "end"
+        "default_route": "end"
   - from: "closer"
     to: "end"
 
