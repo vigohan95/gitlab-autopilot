@@ -6,9 +6,10 @@ PULSE_DB        SQLite path (default ``pulse.db``; ``:memory:`` for tests)
 PULSE_SITES     comma-separated ``name=url`` pairs seeded at start-up
 PULSE_INTERVAL  seconds between background probe rounds (0 disables; default 300)
 PULSE_VERSION   version string shown on /version (defaults to the package version)
-PULSE_CHAOS     demo-only fault injection: ``healthz`` makes /healthz return 503
-                so that the monitor stage can be shown opening an incident and
-                rolling back. Governed by AUTOPILOT.md rule 7.
+PULSE_CHAOS     demo-only fault injection: ``healthz`` makes /healthz (readiness)
+                return 503 so that the monitor stage can be shown opening an
+                incident and rolling back; /livez (liveness) stays 200 so the
+                platform keeps the instance. Governed by AUTOPILOT.md rule 7.
 """
 
 from __future__ import annotations
@@ -105,6 +106,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="pulse", version=__version__, lifespan=lifespan)
     app.state.settings = settings or Settings()
+
+    @app.get("/livez")
+    async def livez() -> dict:
+        """Liveness: the process is up. Used by the platform health check; never affected by PULSE_CHAOS."""
+        return {"status": "alive"}
 
     @app.get("/healthz")
     async def healthz(request: Request) -> JSONResponse:

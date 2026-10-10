@@ -71,6 +71,17 @@ class Render:
         if r.status_code >= 400:
             print(f"::warning:: restart of {service_id} returned HTTP {r.status_code} {r.text[:120]}")
 
+    def ensure_health_check(self, service: dict, path: str = "/livez") -> None:
+        """Blueprint sync can lag; set the health check path through the API when it differs."""
+        current = (service.get("serviceDetails") or {}).get("healthCheckPath")
+        if current == path:
+            return
+        r = self.c.patch(f"/services/{service['id']}", json={"serviceDetails": {"healthCheckPath": path}})
+        if r.status_code >= 400:
+            print(f"::warning:: could not set healthCheckPath={path}: HTTP {r.status_code} {r.text[:120]}")
+        else:
+            print(f"health check path set to {path} (was {current})")
+
     def redeploy(self, service_id: str) -> dict:
         """Apply changed env vars: redeploy the latest build without rebuilding (falls back to a full deploy)."""
         r = self.c.post(f"/services/{service_id}/deploys", json={"deployMode": "deploy_only"})
@@ -94,6 +105,7 @@ def set_chaos(env: str, on: bool) -> str | None:
     name = os.environ.get(f"RENDER_{env.upper()}_SERVICE") or DEFAULT_SERVICES[env]
     render = Render(key)
     service = render.find_service(name)
+    render.ensure_health_check(service)
     if on:
         render.upsert_env(service["id"], "PULSE_CHAOS", "healthz")
     else:
@@ -159,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     name = os.environ.get(f"RENDER_{args.env.upper()}_SERVICE") or DEFAULT_SERVICES[args.env]
     render = Render(key)
     service = render.find_service(name)
+    render.ensure_health_check(service)
     sid, url = service["id"], service_url(service)
     Path("deploy.env").write_text(
         f"DEPLOY_URL={url}\nDEPLOY_VERSION={args.version}\nDEPLOY_MODE=live\nDEPLOY_PROVIDER=render\n",

@@ -36,6 +36,8 @@ class FakeRender:
             return httpx.Response(200, json={"key": req.url.path.rsplit("/", 1)[-1]})
         if req.method == "DELETE":
             return httpx.Response(404)
+        if req.method == "PATCH":
+            return httpx.Response(200, json={"id": "srv-1"})
         if req.method == "POST" and req.url.path.endswith("/deploys"):
             return httpx.Response(201, json={"id": "dep-9", "status": "created"})
         if req.method == "GET" and "/deploys/" in req.url.path:

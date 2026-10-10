@@ -2,6 +2,8 @@
 # One-time: Render dashboard > New > Blueprint > select this repository > Apply.
 # autoDeploy is off on purpose: the GitLab pipeline decides what and when to deploy
 # (scripts/deploy_render.py deploys an exact commit; rollback deploys the release tag's commit).
+# Health check = /livez (liveness). /healthz is readiness: the monitor watches it and the demo chaos
+# switch degrades it; a platform health check on /healthz would refuse to switch traffic to a degraded build.
 services:
   - type: web
     name: pulse-staging
@@ -10,7 +12,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: false
-    healthCheckPath: /healthz
+    healthCheckPath: /livez
     envVars:
       - key: PULSE_PORT
         value: "10000"
@@ -28,7 +30,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: false
-    healthCheckPath: /healthz
+    healthCheckPath: /livez
     envVars:
       - key: PULSE_PORT
         value: "10000"

@@ -26,7 +26,7 @@ also probes other sites while GitLab monitors *it*, which is the kind of loop
 this hackathon is about.
 
 ```
-GET /healthz   GET /version   GET /metrics   GET /            (status page)
+GET /livez (liveness)  GET /healthz (readiness)  GET /version  GET /metrics  GET /  (status page)
 GET /api/sites POST /api/sites DELETE /api/sites/{id}
 POST /api/check  GET /api/checks?site_id=&limit=  GET /api/summary
 ```

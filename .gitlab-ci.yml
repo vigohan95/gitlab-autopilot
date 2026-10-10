@@ -43,6 +43,7 @@ include:
 
 variables:
   PYTHON_IMAGE: "python:3.12-slim"
+  PYTHONUNBUFFERED: "1"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   IMAGE: "$CI_REGISTRY_IMAGE"
   # security templates

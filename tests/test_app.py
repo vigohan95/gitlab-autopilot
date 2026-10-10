@@ -5,6 +5,7 @@ from pulse.app import Settings, create_app
 
 
 def test_healthz_and_version(client):
+    assert client.get("/livez").json() == {"status": "alive"}
     assert client.get("/healthz").json() == {"status": "ok"}
     assert client.get("/version").json() == {"name": "pulse", "version": __version__}
 
@@ -72,6 +73,7 @@ def test_chaos_switch_degrades_healthz(monkeypatch):
     with TestClient(create_app(Settings())) as c:
         r = c.get("/healthz")
         assert r.status_code == 503 and r.json()["status"] == "degraded"
+        assert c.get("/livez").status_code == 200  # liveness unaffected
 
 
 def test_settings_parse_sites():
@@ -79,6 +81,6 @@ def test_settings_parse_sites():
     assert s == [("a", "https://a.test"), ("b", "https://b.test/x")]
 
 
-@pytest.mark.parametrize("path", ["/healthz", "/version", "/metrics", "/", "/api/summary"])
+@pytest.mark.parametrize("path", ["/livez", "/healthz", "/version", "/metrics", "/", "/api/summary"])
 def test_read_endpoints_are_get_only(client, path):
     assert client.post(path).status_code == 405
