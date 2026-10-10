@@ -206,3 +206,26 @@ def test_clear_chaos_switch_uses_render_and_legacy_variable(monkeypatch):
 
     assert incident.clear_chaos_switch(FakeGL()) is True
     assert ("production", False) in calls and any(c[0] == "delete" for c in calls)
+
+
+def test_new_high_findings_ignores_pre_existing(monkeypatch):
+    import automerge
+
+    def fake_get_all(self, path, **params):
+        pid = params["pipeline_id"]
+
+        def mk(ext, where, rt="container_scanning"):
+            return {"report_type": rt, "identifiers": [{"external_id": ext}], "location": {"image": where}}
+
+        if pid == 1:  # MR pipeline
+            return [mk("CVE-1", "python:3.12-slim"), mk("CVE-2", "python:3.12-slim"), mk("CVE-9", "python:3.12-slim")]
+        return [mk("CVE-1", "python:3.12-slim"), mk("CVE-2", "python:3.12-slim")]  # base pipeline
+
+    class GL:
+        project = "1"
+        get_all = fake_get_all
+
+    new, total = automerge.new_high_findings(GL(), 1, 2)
+    assert total == 3 and new == ["container_scanning:CVE-9@python:3.12-slim"]
+    new, total = automerge.new_high_findings(GL(), 1, None)
+    assert len(new) == 3

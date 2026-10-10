@@ -19,6 +19,26 @@ from gitlab_api import GitLab, warn
 from policy import evaluate_mr, load_policy
 
 
+def finding_key(v: dict) -> str:
+    """Stable identity of a finding across pipelines: scanner + first identifier + location."""
+    loc = v.get("location") or {}
+    where = loc.get("file") or loc.get("image") or loc.get("dependency", {}).get("package", {}).get("name") or ""
+    ident = (v.get("identifiers") or [{}])[0].get("external_id") or v.get("name") or ""
+    return f"{v.get('report_type', '')}:{ident}@{where}"
+
+
+def new_high_findings(gl: GitLab, mr_pipeline_id: int, base_pipeline_id: int | None) -> tuple[list[str], int]:
+    """(keys of High/Critical findings present on the MR pipeline but not on the base pipeline, total on MR)."""
+    params = {"severity": "critical,high", "scope": "all"}
+    mr_v = gl.get_all(f"/projects/{gl.project}/vulnerability_findings", pipeline_id=mr_pipeline_id, **params)
+    base_keys: set[str] = set()
+    if base_pipeline_id:
+        base_v = gl.get_all(f"/projects/{gl.project}/vulnerability_findings", pipeline_id=base_pipeline_id, **params)
+        base_keys = {finding_key(v) for v in base_v}
+    new = sorted({finding_key(v) for v in mr_v} - base_keys)
+    return new, len(mr_v)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mr", type=int, default=int(os.environ.get("CI_MERGE_REQUEST_IID", "0") or 0))
@@ -47,23 +67,29 @@ def main(argv: list[str] | None = None) -> int:
         decision.violated.append("§3.2")
         decision.reasons.append("§3.2 no approval from the reviewer agent yet")
 
-    # §3.3: High/Critical findings from the MR security reports.
+    # §3.3: no NEW High/Critical findings — compare the MR pipeline with the latest green pipeline on the target
+    # branch, so pre-existing base-image / dependency findings on main do not block every merge request.
     try:
-        findings = gl.get(f"merge_requests/{args.mr}/pipelines")
-        pipeline_id = findings[0]["id"] if findings else None
+        mr_pipelines = gl.get(f"merge_requests/{args.mr}/pipelines")
+        pipeline_id = mr_pipelines[0]["id"] if mr_pipelines else None
         if pipeline_id:
-            vulns = gl.get_all(
-                f"/projects/{gl.project}/vulnerability_findings",
-                pipeline_id=pipeline_id,
-                severity="critical,high",
-                scope="all",
-            )
-            if vulns:
+            base = gl.get("pipelines", ref=mr["target_branch"], status="success", per_page=1)
+            base_id = base[0]["id"] if base else None
+            new, total = new_high_findings(gl, pipeline_id, base_id)
+            if new:
                 decision.allowed = False
                 decision.violated.append("§3.3")
-                decision.reasons.append(f"§3.3 {len(vulns)} High/Critical security findings on this pipeline")
+                decision.reasons.append(
+                    f"§3.3 {len(new)} NEW High/Critical findings (absent on {mr['target_branch']}): "
+                    + ", ".join(new[:5])
+                )
             else:
                 decision.satisfied.append("§3.3")
+                decision.reasons.append(
+                    f"§3.3 no new High/Critical findings ({total} pre-existing, tracked on {mr['target_branch']})"
+                    if total
+                    else "§3.3 no High/Critical findings"
+                )
     except Exception as exc:  # noqa: BLE001 - endpoint is Ultimate-only; pip-audit job covers §3.3 on Free
         decision.satisfied.append("§3.3")
         decision.reasons.append(f"§3.3 vulnerability API unavailable ({type(exc).__name__}); relying on scanner jobs")

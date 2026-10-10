@@ -50,7 +50,10 @@ same rules and labels the merge request `autopilot::approved` (or
 
 3.3 Security scanners (SAST, Secret Detection, Dependency Scanning, Container
 Scanning, `pip-audit`) report **no new High or Critical** findings on the
-merge request. Medium and below are logged, not blocking.
+merge request. "New" means: present on the merge request pipeline and absent
+from the latest green pipeline of the target branch (pre-existing base-image or
+dependency findings are tracked on `main`, not re-litigated on every merge
+request). Medium and below are logged, not blocking.
 
 3.4 Size limits: at most 400 changed lines and 20 changed files. Larger merge
 requests are split or handed to a human.
