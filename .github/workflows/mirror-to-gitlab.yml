@@ -12,9 +12,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Push to GitLab
+      - name: Push to GitLab (hanwg666/gitlab-autopilot)
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
           if [ -z "$GITLAB_TOKEN" ]; then echo "GITLAB_TOKEN secret not set; skipping mirror"; exit 0; fi
           git push "https://oauth2:${GITLAB_TOKEN}@gitlab.com/hanwg666/gitlab-autopilot.git" HEAD:main
+      - name: Push to the Transcend hackathon showcase project
+        env:
+          GITLAB_SHOWCASE_TOKEN: ${{ secrets.GITLAB_SHOWCASE_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_SHOWCASE_TOKEN" ]; then echo "GITLAB_SHOWCASE_TOKEN secret not set; skipping showcase mirror"; exit 0; fi
+          git push --force-with-lease "https://oauth2:${GITLAB_SHOWCASE_TOKEN}@gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase.git" HEAD:main
