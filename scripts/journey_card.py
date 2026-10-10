@@ -119,7 +119,12 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     gl = GitLab()
-    pipeline_url = os.environ.get("CI_PIPELINE_URL", "")
+    # link the pipeline the card describes (may differ from the job's own pipeline when re-posting a card)
+    pipeline_url = (
+        f"{gl.project_web_url()}/-/pipelines/{args.pipeline}"
+        if args.pipeline
+        else os.environ.get("CI_PIPELINE_URL", "")
+    )
     jobs: list[dict] = []
     mr = issue = monitor = None
     try:

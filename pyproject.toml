@@ -46,6 +46,7 @@ ignore = ["S101"]  # assert in tests
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
 "scripts/*" = ["S603", "S607"]
+"scripts/make_video.py" = ["E501", "S110"]  # embedded HTML/CSS strings; best-effort page tweaks
 
 [tool.coverage.run]
 source = ["pulse", "mcp_server"]
