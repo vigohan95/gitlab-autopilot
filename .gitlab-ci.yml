@@ -488,3 +488,13 @@ demo:cleanup:
   extends: .demo
   script:
     - python scripts/demo.py cleanup
+
+# Repost an honest journey card on issue #1 (the first card, posted before journey_card.py reported real actors,
+# credited Duo flows that had not run). Reads the real jobs of the main pipeline that shipped MR !1.
+demo:recard:
+  extends: .demo
+  variables:
+    RECARD_PIPELINE: "2930758376"
+    RECARD_SHA: "a17bf11d72ed48d0a7a4be1cb4088e99110bb0a1"
+  script:
+    - python scripts/journey_card.py --pipeline "$RECARD_PIPELINE" --sha "$RECARD_SHA" --supersede

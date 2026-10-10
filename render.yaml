@@ -2,8 +2,10 @@
 # One-time: Render dashboard > New > Blueprint > select this repository > Apply.
 # autoDeploy is off on purpose: the GitLab pipeline decides what and when to deploy
 # (scripts/deploy_render.py deploys an exact commit; rollback deploys the release tag's commit).
-# Health check = /livez (liveness). /healthz is readiness: the monitor watches it and the demo chaos
-# switch degrades it; a platform health check on /healthz would refuse to switch traffic to a degraded build.
+# Health check = /version: present in every release (so a rollback to any older release can pass it) and never
+# affected by the chaos switch. /healthz is readiness: the monitor watches it and the chaos switch degrades it;
+# a platform health check on /healthz would refuse to switch traffic to a degraded build. /livez is the
+# explicit liveness endpoint used by the Docker HEALTHCHECK.
 services:
   - type: web
     name: pulse-staging
@@ -12,7 +14,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: false
-    healthCheckPath: /livez
+    healthCheckPath: /version
     envVars:
       - key: PULSE_PORT
         value: "10000"
@@ -30,7 +32,7 @@ services:
     region: oregon
     branch: main
     autoDeploy: false
-    healthCheckPath: /livez
+    healthCheckPath: /version
     envVars:
       - key: PULSE_PORT
         value: "10000"

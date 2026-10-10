@@ -87,11 +87,35 @@ def render(
     return "\n".join(lines)
 
 
+def supersede_old_cards(gl: GitLab, issue_iid: int) -> int:
+    """Prefix earlier journey-card notes with a superseded banner (notes were posted by the same token)."""
+    n = 0
+    for note in gl.get_all(f"issues/{issue_iid}/notes"):
+        body = note.get("body") or ""
+        if "Autopilot journey card" in body and "SUPERSEDED" not in body:
+            banner = (
+                "> **SUPERSEDED** — this card credited Planner/Developer flows that had not run "
+                "(GitLab Duo was not enabled on this project at the time). See the corrected card below.\n\n"
+            )
+            try:
+                gl.put(f"issues/{issue_iid}/notes/{note['id']}", json={"body": banner + body})
+                n += 1
+            except Exception as exc:  # noqa: BLE001
+                warn(f"could not edit note {note['id']}: {type(exc).__name__}")
+    print(f"superseded {n} earlier card(s)")
+    return n
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pipeline", default=os.environ.get("CI_PIPELINE_ID"))
     ap.add_argument("--sha", default=os.environ.get("CI_COMMIT_SHA"))
     ap.add_argument("--close", action="store_true", help="close the originating issue (§1.2)")
+    ap.add_argument(
+        "--supersede",
+        action="store_true",
+        help="mark earlier journey-card notes on the issue as superseded before posting (used to correct a wrong card)",
+    )
     args = ap.parse_args(argv)
 
     gl = GitLab()
@@ -115,6 +139,12 @@ def main(argv: list[str] | None = None) -> int:
     print(card)
 
     if issue and gl.can_write:
+        if args.supersede:
+            supersede_old_cards(gl, issue["iid"])
+            card = (
+                "**Corrected journey card.** The earlier card on this issue credited Planner/Developer flows that had "
+                "not run; this one reports the actors GitLab recorded.\n\n" + card
+            )
         gl.issue_note(issue["iid"], card)
         if args.close:
             gl.put(f"issues/{issue['iid']}", json={"state_event": "close"})

@@ -71,8 +71,9 @@ class Render:
         if r.status_code >= 400:
             print(f"::warning:: restart of {service_id} returned HTTP {r.status_code} {r.text[:120]}")
 
-    def ensure_health_check(self, service: dict, path: str = "/livez") -> None:
-        """Blueprint sync can lag; set the health check path through the API when it differs."""
+    def ensure_health_check(self, service: dict, path: str = "/version") -> None:
+        """Platform health check = /version: exists in every release (rollbacks to old releases must pass it)
+        and is never affected by the chaos switch. Blueprint sync can lag, so it is enforced through the API."""
         current = (service.get("serviceDetails") or {}).get("healthCheckPath")
         if current == path:
             return

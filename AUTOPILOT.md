@@ -100,8 +100,10 @@ pipeline, and leaves the incident open for a human to close.
 
 ## §7 Chaos switch (demo only)
 
-7.1 `PULSE_CHAOS=healthz` makes the service report 503 on `/healthz` (readiness;
-`/livez` stays 200 so the platform keeps the instance running). It exists
+7.1 `PULSE_CHAOS=healthz` makes the service report 503 on `/healthz` (readiness).
+The platform health check is `/version` (present in every release, so any release
+can be rolled back to, and never affected by the switch); `/livez` is the explicit
+liveness endpoint. It exists
 so that the self-healing path can be demonstrated and tested. It is flipped on
 the *running* production service only (`demo.py chaos on`, i.e. an operator
 action, never by a deployment: every deployment removes it), and the first

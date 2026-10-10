@@ -8,9 +8,26 @@ production, watch it in production, roll it back if it breaks, and write the
 story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 
 Built for the GitLab **Life After Code** hackathon (Path A · Start Fresh ·
-Hands-off), entirely on the **GitLab Duo Agent Platform**: 5 custom flows,
-4 custom agents, 5 triggers, 3 foundational flows, 1 MCP server. Everything in
-this repository was created after 2026-10-05. License: [MIT](LICENSE).
+Hands-off). Everything in this repository was created after 2026-10-05.
+License: [MIT](LICENSE).
+
+**What runs today, verifiably, in the history project:** the deterministic
+layer — a 12-stage GitLab CI pipeline with the policy engine (`AUTOPILOT.md`
+enforced by `scripts/policy.py`), scanners, registries, `release-cli`
+releases, staging → production on Render, a scheduled monitor that opens
+incidents and triggers rollbacks. Three merge requests (!1–!3) were taken
+from "opened" to "merged and released" by that layer with no human click
+after the issue; the actors GitLab recorded are a project bot (`scripts/demo.py`)
+and CI jobs, and the notes say so.
+
+**What the GitLab Duo Agent Platform adds, in the hackathon project:** the
+reasoning layer — 5 custom flows, 4 custom agents, 5 triggers and a read-only
+MCP server, defined in `.gitlab/duo/` and registered in the showcase project's
+Agent Platform (plan/create by the Planner + Developer flow, policy review by
+the Reviewer flow, security fixes, incident RCA, the narrative journey card).
+Session links are added to the table below as each flow runs for real; until a
+row has a session link, treat that flow as *designed and registered*, not as
+*executed*.
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
@@ -97,7 +114,7 @@ Two layers, on purpose:
 | **create** | Developer step branches, codes, tests, opens the MR with `Closes #n` | the MR; its commits |
 | **verify** | `test` (pytest + coverage + JUnit), `lint` (ruff → Code Quality report), `verify-staging` | MR widget: tests, coverage, code quality |
 | **package** | `build-image` → Container Registry; `build-wheel` → PyPI Package Registry | Deploy > Container Registry, Package Registry |
-| **secure** | SAST, Secret Detection, Dependency Scanning, Container Scanning, `pip-audit`; failures → Security Fixer flow | MR security widget; Secure > Vulnerability report; fix MRs labelled `security-fix` |
+| **secure** | SAST + Secret Detection (GitLab templates, run on every MR and on `main`) and **`pip-audit`** (fails the pipeline on any known vulnerability — this is the scanner that blocked MR !3). Dependency Scanning and Container Scanning are included from the GitLab templates but **self-skip on the Free tier** (they show as allowed-to-fail/skipped; Ultimate only). Failures → Security Fixer flow (Duo) or a scripted fix MR | MR security widget; red `pip-audit` job on MR !3; fix MRs labelled `security-fix` |
 | **release** | `release-cli` cuts `vX.Y.Z` with generated notes and asset links when the version changes | Deploy > Releases |
 | **configure** | Environments `staging` → `production` on free Render web services (deploy by commit), `resource_group`s, rollback job | Operate > Environments (deployment history) |
 | **monitor** | scheduled `monitor` job probes `/healthz` and `/version`; red → `incident` job opens a GitLab Incident and triggers rollback; Incident Responder flow writes the RCA | Monitor > Incidents; the rollback pipeline (`ROLLBACK_TO`) |
@@ -114,7 +131,7 @@ Everything below is a page in this project; nothing needs to be run locally.
 | 2 | [Releases](https://gitlab.com/hanwg666/gitlab-autopilot/-/releases) · [Container Registry](https://gitlab.com/hanwg666/gitlab-autopilot/container_registry) · [Package Registry](https://gitlab.com/hanwg666/gitlab-autopilot/-/packages) | `v0.1.0`, `v0.1.1` cut by `release-cli` with generated notes and asset links; the image tagged by commit SHA, `latest` and `vX.Y.Z`; the `pulse-monitor` wheel per version. |
 | 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until `RENDER_API_KEY` is present, then live `onrender.com` URLs). |
 | 3 | [Merge requests (all)](https://gitlab.com/hanwg666/gitlab-autopilot/-/merge_requests?scope=all&state=all&label_name[]=autopilot) | each `autopilot` MR carries the **policy-check** note (rules §1.1 §2.1 §2.2 §3.4 §3.5 with pass/fail), the **auto-merge** note ("Merging when this pipeline succeeds", §3.2 §3.3), and the labels `autopilot::approved` / `autopilot::needs-human`. The `security-fix` MR shows the red `pip-audit` run and the fixing commit. |
-| 4 | [Issues](https://gitlab.com/hanwg666/gitlab-autopilot/-/issues?scope=all&state=all&label_name[]=autopilot) · [Incidents](https://gitlab.com/hanwg666/gitlab-autopilot/-/incidents) | the originating issue closed with its **journey card** (stage table, durations, retries); the incident opened by the monitor with the report, the rollback target and the `ROLLBACK_TO` pipeline link. |
+| 4 | [Issues](https://gitlab.com/hanwg666/gitlab-autopilot/-/issues?scope=all&state=all&label_name[]=autopilot) · [Incident #3](https://gitlab.com/hanwg666/gitlab-autopilot/-/issues/3) · [monitor pipeline 2933042883](https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines/2933042883) | issue #1 closed with its journey card (the first card over-credited Duo flows; the corrected card is the later note). Incident #3 timeline, honestly: `demo:chaos-on` degraded `/healthz` on the live production service (07:10Z) → scheduled `monitor` red after 5 attempts → `incident` job opened #3, cleared the chaos switch on the service (production healthy again at 07:14Z) and triggered the rollback to `v0.1.1`. The first rollback attempt failed (`ROLLBACK_PIPELINE_NOTE`); see the rollback pipeline linked in the incident notes for the completed run. |
 | 4 | [`AUTOPILOT.md`](https://gitlab.com/hanwg666/gitlab-autopilot/-/blob/main/AUTOPILOT.md) · [`scripts/policy.py`](https://gitlab.com/hanwg666/gitlab-autopilot/-/blob/main/scripts/policy.py) | the policy in prose and in the YAML block the CI job enforces; every agent/script note ends with `autopilot: rules=[…]` pointing back here. |
 | 5 | [`.gitlab/duo/`](https://gitlab.com/hanwg666/gitlab-autopilot/-/tree/main/.gitlab/duo) · AI > Flows / Agents / Triggers / Sessions | the 5 flow definitions, 4 agents, trigger matrix, `mcp.json`, `agent-config.yml`; the same objects in the UI and their sessions once the group has Duo Agent Platform enabled. |
 | +1 | the manual **`demo:*` jobs** on the latest `main` pipeline | play `demo:mr` (hands-off merge + release), `demo:security` / `demo:security-fix` (security gate), `demo:chaos-on` / `demo:chaos-off` (incident + rollback) yourself — they only need the project's `AUTOPILOT_TOKEN` variable; `DEMO.md` has the timings. |
@@ -138,7 +155,7 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 
 | piece | files | notes |
 |---|---|---|
-| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer |
+| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered in the hackathon project; sessions are linked from the judges' table once run |
 | 4 custom agents | [`.gitlab/duo/agents/`](.gitlab/duo/agents) | `autopilot-reviewer`, `security-fixer`, `incident-responder`, `release-scribe` (for Chat and the UI; their prompts are embedded in the flows because custom flows cannot call custom agents) |
 | 5 triggers | [`.gitlab/duo/triggers.md`](.gitlab/duo/triggers.md) | work item created, MR created, pipeline failed ×2, pipeline passed |
 | 3 foundational flows | — | Developer, Code Review (with [`mr-review-instructions.yaml`](.gitlab/duo/mr-review-instructions.yaml)), Fix CI/CD Pipeline |
