@@ -551,7 +551,8 @@ def end_card_html() -> str:
   <div class="mark">A</div><h1>Autopilot</h1>
   <div class="url"><small>Hackathon project (Duo Agent Platform)</small>{SHOW.replace("https://", "")}</div>
   <div class="url"><small>History: pipelines, releases, incidents</small>{HIST.replace("https://", "")}</div>
-  <p class="ft">GitLab CI · AUTOPILOT.md policy engine · release-cli · Render · GitLab Duo Agent Platform flows &amp; agents · MIT</p></div></div></body></html>"""
+  <p class="ft">2026-10-10: issue #2 → Planner+Developer flow → MR !1 → Code Review flow → policy gate → merged → Closer flow narrated it. One human action.</p>
+  <p class="ft" style="margin-top:14px">GitLab CI · AUTOPILOT.md policy engine · release-cli · Render · GitLab Duo Agent Platform flows &amp; agents · MIT</p></div></div></body></html>"""
 
 
 def thumbnail_html(bg_png: Path) -> str:
