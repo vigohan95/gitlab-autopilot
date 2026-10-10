@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import sqlite3
 import threading
 from collections.abc import Iterable
@@ -50,6 +51,14 @@ class Check:
     status_code: int | None
     latency_ms: float | None
     error: str | None
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile of an ascending list; ``None`` when the list is empty."""
+    if not sorted_values:
+        return None
+    rank = max(1, math.ceil(pct / 100 * len(sorted_values)))
+    return sorted_values[rank - 1]
 
 
 class Store:
@@ -131,6 +140,9 @@ class Store:
             total = len(checks)
             up = sum(1 for c in checks if c.ok)
             latencies = [c.latency_ms for c in checks if c.ok and c.latency_ms is not None]
+            ordered = sorted(latencies)
+            p50 = _percentile(ordered, 50)
+            p95 = _percentile(ordered, 95)
             out.append(
                 {
                     "site_id": site.id,
@@ -139,6 +151,8 @@ class Store:
                     "checks": total,
                     "uptime_pct": round(100.0 * up / total, 2) if total else None,
                     "mean_latency_ms": round(sum(latencies) / len(latencies), 1) if latencies else None,
+                    "p50_latency_ms": round(p50, 1) if p50 is not None else None,
+                    "p95_latency_ms": round(p95, 1) if p95 is not None else None,
                     "last_ok": checks[0].ok if checks else None,
                     "last_ts": checks[0].ts if checks else None,
                 }
