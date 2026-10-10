@@ -47,12 +47,19 @@ def test_summary_and_metrics(client):
     summary = {r["name"]: r for r in client.get("/api/summary").json()}
     assert summary["ok"]["uptime_pct"] == 100.0
     assert summary["err"]["uptime_pct"] == 0.0
+    assert "mean_latency_ms" in summary["ok"]
+    assert summary["ok"]["p50_latency_ms"] is not None
+    assert summary["ok"]["p95_latency_ms"] is not None
+    assert summary["err"]["p50_latency_ms"] is None
 
     text = client.get("/metrics").text
     assert 'pulse_site_up{site="ok"} 1' in text
     assert 'pulse_site_up{site="err"} 0' in text
     assert f'pulse_info{{version="{__version__}"}} 1' in text
     assert 'pulse_site_latency_ms{site="ok"}' in text
+    assert 'pulse_site_latency_p50_ms{site="ok"}' in text
+    assert 'pulse_site_latency_p95_ms{site="ok"}' in text
+    assert 'pulse_site_latency_p50_ms{site="err"}' not in text
 
 
 def test_status_page_html(client):
@@ -62,6 +69,8 @@ def test_status_page_html(client):
     assert "text/html" in page.headers["content-type"]
     assert "<td class='up'>UP</td>" in page.text
     assert "<td class='down'>DOWN</td>" in page.text
+    assert "<th>p50</th>" in page.text
+    assert "<th>p95</th>" in page.text
 
 
 def test_chaos_switch_degrades_healthz(monkeypatch):
