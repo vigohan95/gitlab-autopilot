@@ -58,13 +58,31 @@ class Render:
         if r.status_code not in (204, 404):
             print(f"::warning:: could not delete {key} on {service_id}: HTTP {r.status_code}")
 
+    def latest_deploy(self, service_id: str) -> dict:
+        r = self.c.get(f"/services/{service_id}/deploys", params={"limit": 1})
+        r.raise_for_status()
+        items = r.json()
+        first = items[0] if items else {}
+        return first.get("deploy", first)
+
+    def _deploy_result(self, r: httpx.Response, service_id: str) -> dict:
+        """Render answers 201 + JSON, or 202 Queued with an empty body when a deploy is already in flight
+        (e.g. right after a service PATCH). In that case the queued deploy is the newest one on the service."""
+        r.raise_for_status()
+        if r.content:
+            try:
+                return r.json()
+            except ValueError:
+                pass
+        print(f"deploy request accepted with HTTP {r.status_code} and no body; using the newest deploy")
+        time.sleep(5)
+        return self.latest_deploy(service_id)
+
     def deploy(self, service_id: str, commit: str | None) -> dict:
         body: dict = {"clearCache": "do_not_clear"}
         if commit:
             body["commitId"] = commit
-        r = self.c.post(f"/services/{service_id}/deploys", json=body)
-        r.raise_for_status()
-        return r.json()
+        return self._deploy_result(self.c.post(f"/services/{service_id}/deploys", json=body), service_id)
 
     def restart(self, service_id: str) -> None:
         r = self.c.post(f"/services/{service_id}/restart")
@@ -89,13 +107,15 @@ class Render:
         if r.status_code >= 400:
             print(f"::warning:: deploy_only refused (HTTP {r.status_code} {r.text[:100]}); doing a full deploy")
             r = self.c.post(f"/services/{service_id}/deploys", json={"clearCache": "do_not_clear"})
-        r.raise_for_status()
-        return r.json()
+        return self._deploy_result(r, service_id)
 
     def deploy_status(self, service_id: str, deploy_id: str) -> str:
         r = self.c.get(f"/services/{service_id}/deploys/{deploy_id}")
         r.raise_for_status()
-        return r.json().get("status", "")
+        try:
+            return r.json().get("status", "")
+        except ValueError:
+            return ""
 
 
 def set_chaos(env: str, on: bool) -> str | None:

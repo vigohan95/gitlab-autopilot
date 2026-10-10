@@ -147,3 +147,21 @@ def test_wait_status(monkeypatch):
         lambda _real=httpx.Client, **kw: _real(transport=httpx.MockTransport(lambda r: httpx.Response(next(codes)))),
     )
     assert deploy_render.wait_status("https://p.test", 503, timeout=30, poll=0) is True
+
+
+def test_deploy_accepts_202_queued_without_body(monkeypatch):
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        if req.method == "POST" and req.url.path.endswith("/deploys"):
+            return httpx.Response(202)  # queued, no body
+        if req.method == "GET" and req.url.path.endswith("/deploys"):
+            return httpx.Response(200, json=[{"deploy": {"id": "dep-queued", "status": "queued"}, "cursor": "x"}])
+        return httpx.Response(404)
+
+    monkeypatch.setattr(deploy_render.time, "sleep", lambda s: None)
+    r = deploy_render.Render("key", transport=httpx.MockTransport(handler))
+    assert r.deploy("srv-1", "abc")["id"] == "dep-queued"
+    assert r.redeploy("srv-1")["id"] == "dep-queued"
+    assert ("GET", "/v1/services/srv-1/deploys") in calls
