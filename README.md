@@ -34,7 +34,7 @@ that flow as *designed and registered*, not as *executed*.
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
-> Demo video: `<YOUTUBE_URL>` *(added at submission)*. Both projects receive every commit through one GitHub Actions mirror (`.github/workflows/mirror-to-gitlab.yml`).
+> Demo video: `https://www.youtube.com/watch?v=4gf7paNMP-Q` *(added at submission)*. Both projects receive every commit through one GitHub Actions mirror (`.github/workflows/mirror-to-gitlab.yml`).
 
 ## The application under Autopilot: `pulse`
 
