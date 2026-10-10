@@ -262,18 +262,29 @@ def _current_pin(req: str, package: str) -> str:
 
 
 def scene_chaos(d: Demo, on: bool, fake_url: str | None = None, play: bool = True) -> int:
+    import deploy_render
+
     if on:
         if fake_url:
             d.set_variable("PULSE_PRODUCTION_URL", fake_url)
             print(f"PULSE_PRODUCTION_URL temporarily set to {fake_url} (no real deployment)")
         d.set_variable("PULSE_CHAOS", "healthz", scope="production")
         print("PULSE_CHAOS=healthz set on environment production (AUTOPILOT §7)")
+        url = deploy_render.set_chaos("production", True)
+        if url:
+            print(f"chaos switch applied to the live Render service and service restarted: {url}")
+            if not deploy_render.wait_status(url, 503):
+                print("::warning:: production did not start returning 503 within the wait; monitor may still be green")
     else:
         d.delete_variable("PULSE_CHAOS", scope="production")
         print("PULSE_CHAOS removed")
         if fake_url:
             d.delete_variable("PULSE_PRODUCTION_URL")
             print("fake PULSE_PRODUCTION_URL removed")
+        url = deploy_render.set_chaos("production", False)
+        if url:
+            print(f"chaos switch cleared on the live Render service and service restarted: {url}")
+            deploy_render.wait_status(url, 200)
     if play:
         p = d.play_schedule()
         print(f"schedule '{SCHEDULE_DESC}' played: {p.get('message', p)}")

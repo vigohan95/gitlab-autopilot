@@ -90,6 +90,23 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_url = os.environ.get("CI_PIPELINE_URL", "")
     prod = next((t for t in failed if t["name"] == "production"), None)
 
+    chaos_cleared = False
+    if prod and gl.can_write:
+        try:
+            chaos = [
+                v
+                for v in gl.get_all("variables")
+                if v["key"] == "PULSE_CHAOS" and v["environment_scope"] == "production"
+            ]
+            if chaos:
+                gl._client.delete(
+                    f"/projects/{gl.project}/variables/PULSE_CHAOS", params={"filter[environment_scope]": "production"}
+                )
+                chaos_cleared = True
+                print("chaos switch PULSE_CHAOS found on production and cleared (AUTOPILOT §7.1)")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"could not inspect CI variables: {exc}")
+
     rollback_to = None
     if prod and not args.no_rollback:
         try:
@@ -127,9 +144,15 @@ def main(argv: list[str] | None = None) -> int:
         pipe = gl.trigger_pipeline(args.ref, variables)
         print(f"rollback pipeline started: {pipe.get('web_url')} (ROLLBACK_TO={rollback_to})")
         if incident_iid and gl.can_write:
+            extra = (
+                "\n\nRemediation step 1: the demo chaos switch `PULSE_CHAOS` was set on `production` and has been "
+                "cleared; the rollback deployment removes it from the running service (AUTOPILOT §7.1)."
+                if chaos_cleared
+                else ""
+            )
             gl.issue_note(
                 incident_iid,
-                f"Rollback to `{rollback_to}` started: {pipe.get('web_url')}\n\nautopilot: rules=[§6.2]",
+                f"Rollback to `{rollback_to}` started: {pipe.get('web_url')}{extra}\n\nautopilot: rules=[§6.2, §7.1]",
             )
     with open("incident.env", "w", encoding="utf-8") as fh:
         fh.write(f"INCIDENT_IID={incident_iid or ''}\nROLLBACK_TO={rollback_to or ''}\n")

@@ -109,3 +109,38 @@ def test_dispatcher_resolves_release_tag(monkeypatch):
     monkeypatch.setattr(gitlab_api, "GitLab", lambda: FakeGL())
     assert deploy.resolve_ref("v0.1.0") == "deadbeef"
     assert deploy.resolve_ref("0123456789abcdef") == "0123456789abcdef"
+
+
+def test_set_chaos_toggles_env_and_restarts(monkeypatch):
+    fake = FakeRender()
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        fake.calls.append((req.method, req.url.path, None))
+        if req.method == "POST" and req.url.path.endswith("/restart"):
+            return httpx.Response(200, json={})
+        return fake.handler(req)
+
+    monkeypatch.setenv("RENDER_API_KEY", "key")
+    monkeypatch.setattr(
+        deploy_render,
+        "Render",
+        lambda key, _real=deploy_render.Render: _real(key, transport=httpx.MockTransport(handler)),
+    )
+    assert deploy_render.set_chaos("production", True) == "https://pulse-staging-abcd.onrender.com"
+    assert ("PUT", "/v1/services/srv-1/env-vars/PULSE_CHAOS", None) in fake.calls
+    assert ("POST", "/v1/services/srv-1/restart", None) in fake.calls
+    deploy_render.set_chaos("production", False)
+    assert ("DELETE", "/v1/services/srv-1/env-vars/PULSE_CHAOS", None) in fake.calls
+    monkeypatch.delenv("RENDER_API_KEY")
+    assert deploy_render.set_chaos("production", True) is None
+
+
+def test_wait_status(monkeypatch):
+    codes = iter([200, 200, 503])
+    monkeypatch.setattr(deploy_render.time, "sleep", lambda s: None)
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda _real=httpx.Client, **kw: _real(transport=httpx.MockTransport(lambda r: httpx.Response(next(codes)))),
+    )
+    assert deploy_render.wait_status("https://p.test", 503, timeout=30, poll=0) is True

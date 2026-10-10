@@ -66,10 +66,47 @@ class Render:
         r.raise_for_status()
         return r.json()
 
+    def restart(self, service_id: str) -> None:
+        r = self.c.post(f"/services/{service_id}/restart")
+        if r.status_code >= 400:
+            print(f"::warning:: restart of {service_id} returned HTTP {r.status_code} {r.text[:120]}")
+
     def deploy_status(self, service_id: str, deploy_id: str) -> str:
         r = self.c.get(f"/services/{service_id}/deploys/{deploy_id}")
         r.raise_for_status()
         return r.json().get("status", "")
+
+
+def set_chaos(env: str, on: bool) -> str | None:
+    """Flip PULSE_CHAOS on the live Render service (AUTOPILOT §7) and restart it. Returns the service URL."""
+    key = os.environ.get("RENDER_API_KEY", "")
+    if not key:
+        return None
+    name = os.environ.get(f"RENDER_{env.upper()}_SERVICE") or DEFAULT_SERVICES[env]
+    render = Render(key)
+    service = render.find_service(name)
+    if on:
+        render.upsert_env(service["id"], "PULSE_CHAOS", "healthz")
+    else:
+        render.delete_env(service["id"], "PULSE_CHAOS")
+    render.restart(service["id"])
+    return service_url(service)
+
+
+def wait_status(url: str, want: int, timeout: float = 240, poll: float = 10) -> bool:
+    """Wait until GET url/healthz returns HTTP ``want`` (503 = chaos active, 200 = healthy)."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with httpx.Client(timeout=15, follow_redirects=True) as c:
+                code = c.get(url + "/healthz").status_code
+            print(f"  {url}/healthz -> {code} (want {want})")
+            if code == want:
+                return True
+        except httpx.HTTPError as exc:
+            print(f"  {url}/healthz -> {type(exc).__name__}")
+        time.sleep(poll)
+    return False
 
 
 def service_url(service: dict) -> str:
