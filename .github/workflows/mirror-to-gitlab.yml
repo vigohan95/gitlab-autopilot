@@ -23,4 +23,4 @@ jobs:
           GITLAB_SHOWCASE_TOKEN: ${{ secrets.GITLAB_SHOWCASE_TOKEN }}
         run: |
           if [ -z "$GITLAB_SHOWCASE_TOKEN" ]; then echo "GITLAB_SHOWCASE_TOKEN secret not set; skipping showcase mirror"; exit 0; fi
-          git push --force-with-lease "https://oauth2:${GITLAB_SHOWCASE_TOKEN}@gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase.git" HEAD:main
+          git push "https://oauth2:${GITLAB_SHOWCASE_TOKEN}@gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase.git" HEAD:main
