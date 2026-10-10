@@ -31,6 +31,25 @@ Notes from the docs (docs.gitlab.com/user/duo_agent_platform/triggers/):
   `ai_catalog_create_third_party_flows` feature flag (disabled by default on GitLab.com); use the
   AI Catalog and paste the YAML.
 
+## Status (2026-10-10) and the exact API shapes
+
+- Agents: all four created **and enabled** in the hackathon project (AI > Agents; catalog items 1016493–1016496, v1.0.0).
+- Flows: `f2-reviewer` created (`aiCatalogFlowCreate`, catalog item 1016498, the server accepted the YAML as is);
+  f1/f3/f4/f5 and the *enable* step (`aiCatalogItemConsumerCreate`) and the triggers (`aiFlowTriggerCreate`)
+  still have to be done by the project owner in the UI (AI > Flows > New flow → paste YAML → Create flow → Enable;
+  AI > Triggers > New flow trigger).
+- GraphQL equivalents (for a Maintainer/Owner token): `aiCatalogFlowCreate(name, description, projectId,
+  visibility, release, definition)`; `aiCatalogItemConsumerCreate(itemId, target: {projectId})`;
+  `aiFlowTriggerCreate(projectPath, userId, description, eventTypes, filter, goals, aiCatalogItemConsumerId)` where
+  `eventTypes` is a bitmask of MENTION, ASSIGN, ASSIGN_REVIEWER, PIPELINE_HOOKS, MERGE_REQUEST_READY,
+  MERGE_REQUEST_CODE_CONFLICT, MERGE_REQUEST, WORK_ITEM, COMMIT_TO_DEFAULT_BRANCH, SCHEDULED.
+- Tool ids: verified against `aiCatalogBuiltInTools` (100 ids). Not available: `gitlab_api_get`, `gitlab_graphql`,
+  `search_code` — the flows now use `gitlab_blob_search`, `list_releases`, `list_pipelines`, `get_pipeline`,
+  `get_commit`, `list_merge_requests`, `run_glql_query` instead. `tests/test_duo_yaml.py` guards the lists.
+- Project Settings > General is not visible to the Developer role; project-level Duo toggles are preset by the
+  onboarding group owner.
+- Hackathon project: https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase
+
 ## Foundational flows (turned on at the top-level group: Settings > GitLab Duo > Allow foundational flows)
 
 | flow | role in Autopilot | how it is invoked |
@@ -45,10 +64,6 @@ Developer and by the custom flows through `context:inputs.user_rule`.
 ## MCP (read-only `pulse-readonly` server)
 
 - IDE / Duo CLI: `.gitlab/duo/mcp.json` (stdio transport), tools pre-approved because every tool is a GET.
-- Flows and agents in the GitLab UI: MCP servers come from the **AI Catalog > MCP** tab (HTTP transport
-  only, OAuth or none; experiment behind `ai_catalog_mcp_servers`; on GitLab.com the catalog is
-  curated by GitLab, "arbitrary URLs are not allowed"). Run the server with
-  `python -m mcp_server.pulse_mcp --transport streamable-http --port 8765` on a public host (free
-  Hugging Face Space or the user's machine over a tunnel) and ask in `#transcend-hackathon` whether
-  hackathon servers can be added `[VERIFY-IN-UI]`. Attach it to `incident-responder` under
-  **MCP servers** in the agent editor. Group setting: **Settings > GitLab Duo > Allow external MCP tools**.
+- Flows and agents in the GitLab UI: the agent form's **MCP servers** multiselect only lists GitLab.com's
+  curated catalog (Linear, Atlassian, Context7 on 2026-10-10); a self-hosted server cannot be attached, so the
+  `pulse-readonly` server is an IDE / Duo CLI capability only (`.gitlab/duo/mcp.json`), not a UI-flow one.

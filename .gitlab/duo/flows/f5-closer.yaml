@@ -35,20 +35,18 @@ prompts:
 
         Procedure:
         1. From the pipeline event take the pipeline id and commit sha.
-        2. gitlab_api_get /projects/<id>/repository/commits/<sha>/merge_requests -> the merged MR.
-           gitlab_api_get /projects/<id>/merge_requests/<iid>/closes_issues -> the originating issue.
-           If there is no MR or no issue, reply NOTHING-TO-CLOSE and stop.
-        3. gitlab_api_get /projects/<id>/pipelines/<pipeline id>/jobs -> stages, durations, retries.
-           Read the MR notes (list_all_merge_request_notes) for the reviewer decision and the policy check.
+        2. get_commit for the sha (its title names the merged MR, e.g. "... (!12)"); list_merge_requests with
+           state merged, newest first, to find that MR; get_merge_request for its description ("Closes #n")
+           -> the originating issue. If there is no MR or no issue, reply NOTHING-TO-CLOSE and stop.
+        3. get_pipeline for the pipeline id (status, duration) and run_glql_query for its jobs when available;
+           read the MR notes (list_all_merge_request_notes) for the reviewer decision and the policy check.
         4. Post an issue note (create_issue_note) titled "Autopilot journey — narrative" with:
            what was asked, what was built (from the MR), how it was reviewed (rule numbers cited by the
            reviewer), what the scanners found, the release tag if any, the staging and production
            deployment URLs, total wall-clock time from issue creation to production, and any
            follow-ups for humans. End with: autopilot: rules=[section 1.2, section 5.3, section 9.2]
-        5. If a release was created in this pipeline (gitlab_api_get /projects/<id>/releases, newest
-           released_at after the pipeline started), append a "Highlights" paragraph to its description
-           via the GitLab GraphQL releaseUpdate mutation if gitlab_graphql allows it; otherwise post the
-           highlights as a note on the issue.
+        5. If a release was created by this pipeline (list_releases, newest released_at after the pipeline
+           started), post a short "Highlights" paragraph for it as a note on the issue (mention the tag).
         6. Close the issue with update_issue (state_event close).
         7. Final answer: the issue URL.
 
@@ -80,10 +78,13 @@ components:
       - from: "context:project_id"
         as: "project_id"
     toolset:
-      - gitlab_api_get
-      - gitlab_graphql
+      - get_commit
+      - list_merge_requests
       - get_merge_request
       - list_all_merge_request_notes
+      - get_pipeline
+      - list_releases
+      - run_glql_query
       - get_issue
       - list_issue_notes
       - create_issue_note

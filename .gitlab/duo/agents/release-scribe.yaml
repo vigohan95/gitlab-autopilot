@@ -1,18 +1,21 @@
-# Custom agent — created in AI > Agents > New agent.
+# Custom agent — created in AI > Agents > New agent (hackathon project, 2026-10-10, catalog item 1016496, v1.0.0, enabled).
 display_name: release-scribe
 description: >
   Closes the loop on an Autopilot journey: writes the narrative journey card on the originating issue,
   adds human-readable highlights to the release, and closes the issue. Reports only what GitLab records.
 visibility: Private
 tools:
-  - gitlab_api_get
-  - gitlab_graphql
   - get_merge_request
-  - list_all_merge_request_notes
+  - list_mr_discussions
+  - list_merge_requests
   - get_issue
-  - list_issue_notes
+  - get_work_item_notes
   - create_issue_note
   - update_issue
+  - get_pipeline
+  - get_commit
+  - list_releases
+  - run_glql_query
 system_prompt: |
   You are release-scribe for the pulse project (AUTOPILOT.md sections 1.2, 5.3, 9.2).
 

@@ -1,6 +1,7 @@
-# Custom agent — created in AI > Agents > New agent.
-# MCP: attach the `pulse-readonly` server in the agent's "MCP servers" section when the AI Catalog
-# MCP feature is available (experiment, flag ai_catalog_mcp_servers) [VERIFY-IN-UI].
+# Custom agent — created in AI > Agents > New agent (hackathon project, 2026-10-10, catalog item 1016495, v1.0.0, enabled).
+# MCP: the agent form's "MCP servers" multiselect only offers GitLab.com's curated catalog (Linear, Atlassian,
+# Context7); a self-hosted server such as mcp_server/pulse_mcp.py cannot be attached there. The MCP server is
+# usable from the IDE / Duo CLI through .gitlab/duo/mcp.json instead.
 display_name: incident-responder
 description: >
   Investigates production incidents raised by the monitor pipeline, verifies the automatic rollback and
@@ -10,22 +11,21 @@ visibility: Private
 tools:
   - get_pipeline_failing_jobs
   - get_job_logs
-  - list_issues
+  - gitlab_issue_search
   - get_issue
   - create_issue
   - create_issue_note
   - update_issue
-  - gitlab_api_get
   - get_repository_file
-mcp_servers:
-  - pulse-readonly
+  - list_releases
+  - get_pipeline
+  - list_pipelines
 system_prompt: |
   You are incident-responder for the pulse project. You operate under AUTOPILOT.md section 6 and 7.
 
   When a monitor pipeline fails: read the monitor and incident job logs; find the open incident labelled
-  autopilot,incident (create one with issue_type incident if it is missing); gather evidence with the
-  pulse-readonly MCP tools (pulse_health, pulse_summary, pulse_recent_checks, pulse_metrics,
-  gitlab_releases) or, if they are unavailable, with gitlab_api_get and the logs; identify the root cause
+  autopilot,incident (create one with issue_type incident if it is missing); gather evidence from the job logs,
+  list_releases, list_pipelines / get_pipeline; identify the root cause
   (a 503 on /healthz mentioning PULSE_CHAOS is the demo chaos switch of section 7 — say so plainly);
   confirm the rollback pipeline (ROLLBACK_TO variable) ran and that production reports the rolled-back
   version; write the RCA as an incident note with the headings Impact, Timeline (UTC), Root cause,

@@ -1,4 +1,4 @@
-# Custom agent — created in AI > Agents > New agent.
+# Custom agent — created in AI > Agents > New agent (hackathon project, 2026-10-10, catalog item 1016494, v1.0.0, enabled).
 display_name: security-fixer
 description: >
   Turns SAST, Secret Detection, Dependency Scanning and pip-audit findings into minimal fix merge

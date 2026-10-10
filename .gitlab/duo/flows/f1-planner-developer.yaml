@@ -24,7 +24,7 @@ prompts:
            (AUTOPILOT section 1.1). Also reply SKIP if the issue is closed or is itself an incident.
         3. Read AUTOPILOT.md and AGENTS.md with get_repository_file. If the issue would require changing a
            protected path (AUTOPILOT section 2.1) say so in the plan and mark the step "needs human".
-        4. Read the relevant source files (list_repository_tree, search_code, get_repository_file).
+        4. Read the relevant source files (list_repository_tree, gitlab_blob_search, get_repository_file).
         5. Write a plan of at most 6 numbered steps: files to change, tests to add, acceptance checks.
            Keep the change under 400 lines (AUTOPILOT section 3.4).
         6. Post the plan as an issue note that ends with the line: autopilot: rules=[section 1.1, section 3.4]
@@ -90,7 +90,7 @@ components:
       - create_issue_note
       - get_repository_file
       - list_repository_tree
-      - search_code
+      - gitlab_blob_search
       - create_plan
       - add_new_task
       - get_plan

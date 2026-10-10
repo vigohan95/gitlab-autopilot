@@ -3,11 +3,11 @@
 # Only the scheduled monitor pipeline continues. By the time this flow runs, scripts/incident.py has
 # already opened the Incident and started the rollback pipeline (deterministic part, AUTOPILOT §6).
 # This flow does the reasoning: root-cause analysis, verification that the rollback restored service,
-# and the incident timeline. It reads live state through the read-only MCP server (pulse-readonly)
-# when the MCP server is connected (see ../triggers.md §MCP); otherwise it uses the job logs.
+# and the incident timeline, from job logs, releases and pipelines. (The read-only MCP server in
+# mcp_server/ is usable from the IDE / Duo CLI via .gitlab/duo/mcp.json; GitLab.com's AI Catalog only
+# offers curated MCP servers, so flows in the UI cannot use it.)
 #
-# [VERIFY-IN-UI] MCP tools exposed to flows via AI Catalog (experiment, flag ai_catalog_mcp_servers);
-# create_issue with issue_type incident for the fallback path.
+# Tool ids verified against the live catalog (aiCatalogBuiltInTools) on 2026-10-10.
 version: "v1"
 environment: ambient
 coding_environment: none
@@ -42,14 +42,13 @@ prompts:
         2. Find the incident: list_issues with issue_type incident, state opened, labels autopilot,incident.
            If none exists (the incident job could not create one), create_issue with issue_type incident,
            title "Production unhealthy (<timestamp>)", labels autopilot,incident,env::production.
-        3. Gather evidence. If MCP tools from pulse-readonly are available use pulse_health, pulse_summary,
-           pulse_recent_checks, pulse_metrics and gitlab_releases; otherwise use gitlab_api_get on
-           /projects/<id>/releases and /projects/<id>/pipelines?ref=main and the job logs.
+        3. Gather evidence from the job logs (monitor-report.json is printed by the monitor job), list_releases
+           (which release is deployed, which one is the rollback target) and list_pipelines / get_pipeline.
         4. Determine the root cause: a 503 on /healthz with reason PULSE_CHAOS means the chaos switch
            (section 7) was set — say so plainly. A version mismatch means a bad deploy. Timeouts mean the
            Space is asleep or the host is down.
-        5. Check the rollback: find the newest pipeline on main with variable ROLLBACK_TO (gitlab_api_get
-           /projects/<id>/pipelines?ref=main&source=trigger). Report its status and URL.
+        5. Check the rollback: the incident job's log and the incident notes contain the rollback pipeline URL;
+           confirm its status with get_pipeline (or list_pipelines on ref main, newest first). Report status and URL.
         6. Write the RCA as an incident note with these headings: Impact, Timeline (UTC), Root cause,
            Remediation (automatic), Follow-ups for humans, Evidence. End with:
            autopilot: rules=[section 6.1, section 6.2, section 6.3]
@@ -91,7 +90,10 @@ components:
       - create_issue
       - create_issue_note
       - update_issue
-      - gitlab_api_get
+      - gitlab_issue_search
+      - list_releases
+      - list_pipelines
+      - get_pipeline
       - get_repository_file
     ui_log_events:
       - on_agent_final_answer

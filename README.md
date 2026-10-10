@@ -25,9 +25,12 @@ reasoning layer — 5 custom flows, 4 custom agents, 5 triggers and a read-only
 MCP server, defined in `.gitlab/duo/` and registered in the showcase project's
 Agent Platform (plan/create by the Planner + Developer flow, policy review by
 the Reviewer flow, security fixes, incident RCA, the narrative journey card).
-Session links are added to the table below as each flow runs for real; until a
-row has a session link, treat that flow as *designed and registered*, not as
-*executed*.
+Status on 2026-10-10: the **four agents are registered and enabled** in the
+hackathon project (AI > Agents); flow `f2-reviewer` is registered in the AI
+Catalog; enabling the flows in the project and creating the triggers are
+pending (they need the project owner's role). Session links are added to the
+table below as each flow runs for real; until a row has a session link, treat
+that flow as *designed and registered*, not as *executed*.
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
@@ -159,7 +162,7 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 | 4 custom agents | [`.gitlab/duo/agents/`](.gitlab/duo/agents) | `autopilot-reviewer`, `security-fixer`, `incident-responder`, `release-scribe` (for Chat and the UI; their prompts are embedded in the flows because custom flows cannot call custom agents) |
 | 5 triggers | [`.gitlab/duo/triggers.md`](.gitlab/duo/triggers.md) | work item created, MR created, pipeline failed ×2, pipeline passed |
 | 3 foundational flows | — | Developer, Code Review (with [`mr-review-instructions.yaml`](.gitlab/duo/mr-review-instructions.yaml)), Fix CI/CD Pipeline |
-| MCP server (read-only) | [`mcp_server/pulse_mcp.py`](mcp_server/pulse_mcp.py), [`.gitlab/duo/mcp.json`](.gitlab/duo/mcp.json) | `pulse_health`, `pulse_summary`, `pulse_recent_checks`, `pulse_metrics`, `gitlab_releases`; stdio and streamable-HTTP |
+| MCP server (read-only) | [`mcp_server/pulse_mcp.py`](mcp_server/pulse_mcp.py), [`.gitlab/duo/mcp.json`](.gitlab/duo/mcp.json) | `pulse_health`, `pulse_summary`, `pulse_recent_checks`, `pulse_metrics`, `gitlab_releases`; stdio and streamable-HTTP. Usable from the IDE / Duo CLI; GitLab.com's AI Catalog only offers curated MCP servers, so UI flows cannot attach it |
 | repository context | [`AGENTS.md`](AGENTS.md), [`.gitlab/duo/agent-config.yml`](.gitlab/duo/agent-config.yml) | read by Developer and by the custom flows via `context:inputs.user_rule` |
 
 ## Repository layout
