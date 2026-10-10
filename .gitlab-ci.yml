@@ -302,7 +302,11 @@ verify-staging:
 deploy-production:
   stage: deploy-production
   extends: .deploy
-  needs: [version, deploy-staging, verify-staging]
+  needs:
+    - job: version
+      optional: true
+    - deploy-staging
+    - verify-staging
   script:
     - python scripts/deploy.py --env production --version "$DEPLOY_VERSION"
   environment:

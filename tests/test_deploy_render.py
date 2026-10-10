@@ -113,6 +113,7 @@ def test_dispatcher_resolves_release_tag(monkeypatch):
 
 def test_set_chaos_toggles_env_and_restarts(monkeypatch):
     fake = FakeRender()
+    monkeypatch.setattr(deploy_render.time, "sleep", lambda s: None)
 
     def handler(req: httpx.Request) -> httpx.Response:
         fake.calls.append((req.method, req.url.path, None))
@@ -128,7 +129,7 @@ def test_set_chaos_toggles_env_and_restarts(monkeypatch):
     )
     assert deploy_render.set_chaos("production", True) == "https://pulse-staging-abcd.onrender.com"
     assert ("PUT", "/v1/services/srv-1/env-vars/PULSE_CHAOS", None) in fake.calls
-    assert ("POST", "/v1/services/srv-1/restart", None) in fake.calls
+    assert ("POST", "/v1/services/srv-1/deploys", None) in fake.calls
     deploy_render.set_chaos("production", False)
     assert ("DELETE", "/v1/services/srv-1/env-vars/PULSE_CHAOS", None) in fake.calls
     monkeypatch.delenv("RENDER_API_KEY")

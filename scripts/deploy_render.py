@@ -71,6 +71,15 @@ class Render:
         if r.status_code >= 400:
             print(f"::warning:: restart of {service_id} returned HTTP {r.status_code} {r.text[:120]}")
 
+    def redeploy(self, service_id: str) -> dict:
+        """Apply changed env vars: redeploy the latest build without rebuilding (falls back to a full deploy)."""
+        r = self.c.post(f"/services/{service_id}/deploys", json={"deployMode": "deploy_only"})
+        if r.status_code >= 400:
+            print(f"::warning:: deploy_only refused (HTTP {r.status_code} {r.text[:100]}); doing a full deploy")
+            r = self.c.post(f"/services/{service_id}/deploys", json={"clearCache": "do_not_clear"})
+        r.raise_for_status()
+        return r.json()
+
     def deploy_status(self, service_id: str, deploy_id: str) -> str:
         r = self.c.get(f"/services/{service_id}/deploys/{deploy_id}")
         r.raise_for_status()
@@ -89,7 +98,9 @@ def set_chaos(env: str, on: bool) -> str | None:
         render.upsert_env(service["id"], "PULSE_CHAOS", "healthz")
     else:
         render.delete_env(service["id"], "PULSE_CHAOS")
-    render.restart(service["id"])
+    dep = render.redeploy(service["id"])
+    status = wait_live(render, service["id"], dep["id"], timeout=600)
+    print(f"redeploy {dep.get('id')} -> {status}")
     return service_url(service)
 
 

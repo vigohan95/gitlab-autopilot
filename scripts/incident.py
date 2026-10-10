@@ -22,6 +22,14 @@ from pathlib import Path
 from gitlab_api import GitLab, warn
 
 INCIDENT_LABELS = ["autopilot", "incident", "env::production"]
+REUSE_WINDOW_HOURS = 2
+
+
+def recent_cutoff() -> str:
+    """Only an open incident younger than this is re-used; older ones stay open for humans (AUTOPILOT §6.3)."""
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(hours=REUSE_WINDOW_HOURS)).isoformat(timespec="seconds")
 
 
 def pick_rollback_target(releases: list[dict], deployed_version: str | None) -> str | None:
@@ -117,7 +125,9 @@ def main(argv: list[str] | None = None) -> int:
     incident_iid = None
     if gl.can_write:
         title = f"Production unhealthy: {', '.join(t['name'] for t in failed)} ({report['ts'][:16]})"
-        existing = gl.get_all("issues", issue_type="incident", state="opened", labels="autopilot,incident")
+        existing = gl.get_all(
+            "issues", issue_type="incident", state="opened", labels="autopilot,incident", created_after=recent_cutoff()
+        )
         if existing:
             incident_iid = existing[0]["iid"]
             gl.issue_note(incident_iid, f"Monitor failed again at `{report['ts']}` (pipeline {pipeline_url}).")
@@ -137,13 +147,23 @@ def main(argv: list[str] | None = None) -> int:
     else:
         warn("AUTOPILOT_TOKEN not set: incident issue not created (rollback still triggered)")
 
+    pipe: dict = {}
     if prod and rollback_to and not args.no_rollback:
         variables = {"ROLLBACK_TO": rollback_to}
         if incident_iid:
             variables["INCIDENT_IID"] = str(incident_iid)
-        pipe = gl.trigger_pipeline(args.ref, variables)
-        print(f"rollback pipeline started: {pipe.get('web_url')} (ROLLBACK_TO={rollback_to})")
-        if incident_iid and gl.can_write:
+        try:
+            pipe = gl.trigger_pipeline(args.ref, variables)
+            print(f"rollback pipeline started: {pipe.get('web_url')} (ROLLBACK_TO={rollback_to})")
+        except Exception as exc:  # noqa: BLE001
+            body = getattr(getattr(exc, "response", None), "text", "")[:300]
+            warn(f"rollback trigger failed: {exc} {body}")
+            if incident_iid and gl.can_write:
+                gl.issue_note(
+                    incident_iid,
+                    f"Automatic rollback could NOT be started: `{exc}` `{body}`\n\nA human must roll back.",
+                )
+        if pipe and incident_iid and gl.can_write:
             extra = (
                 "\n\nRemediation step 1: the demo chaos switch `PULSE_CHAOS` was set on `production` and has been "
                 "cleared; the rollback deployment removes it from the running service (AUTOPILOT §7.1)."
