@@ -54,19 +54,19 @@ ZOOM = "1.15"
 SHOTS: list[tuple[str, str]] = [
     (
         "One issue in, production out",
-        "Code generation is solved. Autopilot is about everything after the code: one issue goes in, production comes out. Nine DevSecOps stages on GitLab CI, designed around the GitLab Duo Agent Platform, with a written policy that every step cites.",
+        "Code generation is solved. Autopilot is about everything after the code: one issue goes in, production comes out. Nine DevSecOps stages on GitLab CI, with a written policy that every step cites.",
     ),
     (
-        "Issue #1 — the only input",
-        "It starts with one issue and one label: autopilot. In this recording the issue was opened by our demo script. From here on, nothing is clicked by a person.",
+        "Issue #2 — the only human action",
+        "It starts with one issue and one label: autopilot, filed by a person. From here on, nothing is clicked by a human.",
     ),
     (
         "MR !1 — policy as code",
-        "A merge request appears. Policy as code: AUTOPILOT dot M D says what may be merged without a human. The policy check cites the rules it applied: scope, protected paths, size, no conflicts. It labels the request approved, and the auto-merge job merges when the pipeline is green. Every note ends with the rule numbers.",
+        "A merge request appears. Policy as code: AUTOPILOT dot M D says what may be merged without a human. The policy check cites the rules it applied and labels the request approved; the auto-merge job merges when the pipeline is green. Every note ends with the rule numbers.",
     ),
     (
         "MR !3 — the security gate holds",
-        "Security is a loop, not a report. Here a dependency bump pulls a vulnerable web framework. The scanners run from the first second, next to the tests. The tests are green, and pip-audit is red: five advisories. The gate holds. Nothing merges.",
+        "Security is a loop, not a report. A dependency bump pulls a vulnerable framework; the scanners run next to the tests. Tests green, pip-audit red: five advisories. The gate holds. Nothing merges.",
     ),
     (
         "MR !3 — fixed and merged",
@@ -74,7 +74,7 @@ SHOTS: list[tuple[str, str]] = [
     ),
     (
         "Releases, image, wheel",
-        "On main, every merge becomes a package: an image in the container registry, a wheel in the package registry, and when the version changes, release-cli cuts a tagged release with generated notes. Three releases, all cut by the pipeline.",
+        "On main, every merge becomes a package: an image in the container registry, a wheel in the package registry, and when the version changes, release-cli cuts a tagged release. Three releases, all cut by the pipeline.",
     ),
     (
         "Staging → production on Render",
@@ -82,11 +82,11 @@ SHOTS: list[tuple[str, str]] = [
     ),
     (
         "Incident #3 — self-healing",
-        "A scheduled monitor watches it. We broke production on purpose: the monitor went red, the pipeline opened this incident, cleared the fault on the live service, and rolled back to the previous release. Never forward. The rollback pipeline and its note are on the incident.",
+        "A scheduled monitor watches production. We broke it on purpose: the monitor went red, the pipeline opened this incident, cleared the fault on the live service, and rolled back to the previous release. Never forward.",
     ),
     (
         "Journey card — honest by design",
-        "Back on the original issue: the journey card. Nine stages, which jobs covered them, how long, how many retries. The first card over-claimed; it is marked superseded, and the corrected one names the real actors. Honesty is part of the design.",
+        "Back on an earlier run's issue: the journey card. Nine stages, which jobs covered them, how long, how many retries. The first card over-claimed; it is marked superseded and corrected. Honesty is part of the design.",
     ),
     (
         "Policy, flows, pipeline — one repo",
@@ -95,7 +95,7 @@ SHOTS: list[tuple[str, str]] = [
 ]
 DUO_SHOT = (
     "GitLab Duo Agent Platform — a real run",
-    "In the hackathon project the work is started by a GitLab Duo trigger. The Planner-and-Developer flow posts its plan on the issue, citing the policy, then writes the code and the tests and opens the merge request. GitLab Duo Code Review reads it; the policy check approves. The agents did the work; the pipeline kept the gate.",
+    "In the hackathon project a GitLab Duo trigger starts the Planner-and-Developer flow. It posts its plan on the issue, citing the policy, writes the code and the tests, and opens the merge request; GitLab Duo Code Review reads it. The agents did the work; the pipeline keeps the gate.",
 )
 
 # ------------------------------------------------------------------------------------------------------------
@@ -391,11 +391,11 @@ def record(
         rec.end(need[n - 1])
 
         # 2 issue #1
-        shot("Issue #1 — the only input")
-        rec.goto(f"{HIST}/-/issues/1")
-        rec.still(stills, "02-issue-1")
-        rec.scroll_to_text("autopilot", dy=-200, settle=1.0)
-        rec.pause(1.0)
+        shot("Issue #2 — the only human action")
+        rec.goto(duo[0] if duo else f"{HIST}/-/issues/1")
+        rec.still(stills, "02-issue")
+        rec.scroll_to_text("Acceptance checks", dy=-220, settle=1.2)
+        rec.pause(0.8)
         rec.end(need[n - 1])
 
         # optional Duo shot: the flow's plan note on the hackathon issue, then the MR it opened (public pages)

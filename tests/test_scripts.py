@@ -226,6 +226,34 @@ def test_new_high_findings_ignores_pre_existing(monkeypatch):
         get_all = fake_get_all
 
     new, total = automerge.new_high_findings(GL(), 1, 2)
-    assert total == 3 and new == ["container_scanning:CVE-9@python:3.12-slim"]
+    assert total == 3 and new == ["container_scanning:CVE-9@python"]  # tag stripped by design
     new, total = automerge.new_high_findings(GL(), 1, None)
     assert len(new) == 3
+
+
+def test_finding_key_ignores_image_tag():
+    import automerge
+
+    a = {
+        "report_type": "container_scanning",
+        "identifiers": [{"external_id": "CVE-1"}],
+        "location": {"image": "registry.gitlab.com/g/p:aaaa111"},
+    }
+    b = {
+        "report_type": "container_scanning",
+        "identifiers": [{"external_id": "CVE-1"}],
+        "location": {"image": "registry.gitlab.com/g/p:bbbb222"},
+    }
+    c = {
+        "report_type": "container_scanning",
+        "identifiers": [{"external_id": "CVE-1"}],
+        "location": {"image": "registry.gitlab.com/g/p@sha256:deadbeef"},
+    }
+    assert (
+        automerge.finding_key(a)
+        == automerge.finding_key(b)
+        == automerge.finding_key(c)
+        == "container_scanning:CVE-1@registry.gitlab.com/g/p"
+    )
+    f = {"report_type": "sast", "identifiers": [{"external_id": "B101"}], "location": {"file": "pulse/app.py"}}
+    assert automerge.finding_key(f) == "sast:B101@pulse/app.py"

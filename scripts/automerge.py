@@ -23,6 +23,12 @@ def finding_key(v: dict) -> str:
     """Stable identity of a finding across pipelines: scanner + first identifier + location."""
     loc = v.get("location") or {}
     where = loc.get("file") or loc.get("image") or loc.get("dependency", {}).get("package", {}).get("name") or ""
+    if loc.get("image"):
+        # the image is tagged per commit (registry/path:<sha>); the same base-image CVE must key identically
+        where = where.split("@", 1)[0]
+        head, _, tail = where.rpartition(":")
+        if head and "/" not in tail:
+            where = head
     ident = (v.get("identifiers") or [{}])[0].get("external_id") or v.get("name") or ""
     return f"{v.get('report_type', '')}:{ident}@{where}"
 
