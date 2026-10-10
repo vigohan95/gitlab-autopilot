@@ -1,5 +1,7 @@
 # Flow triggers (created in **AI > Triggers > New flow trigger**)
 
+Created in the hackathon project https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase (group `gitlab-ai-hackathon/transcend-october-2026/43190989`, Ultimate, Duo Agent Platform enabled).
+
 Triggers have no file format; they are created in the UI. Each row is one trigger.
 Service account: the one GitLab creates when the flow is enabled in the project
 (`ai-<flow>-<group>`), or a single `ai-autopilot-<group>` account chosen for all.

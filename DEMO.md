@@ -1,5 +1,7 @@
 # DEMO.md — runbook for the three scenes (works today, with or without Duo)
 
+Scenes A–C were run in the history project (https://gitlab.com/hanwg666/gitlab-autopilot: MR !1 scene A, MR !3 scene B, incident #3 scene C). The Duo flows/agents/triggers and their sessions live in the hackathon project (https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase); see SUBMIT.md §C5–C8 for that setup.
+
 All scenes are driven by `scripts/demo.py` through the GitLab API. They need
 one secret, `AUTOPILOT_TOKEN` (project access token, scope `api`, role
 Maintainer), either exported locally or stored as a masked (not protected) CI/CD variable —

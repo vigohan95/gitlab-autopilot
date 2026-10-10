@@ -12,8 +12,9 @@ Hands-off), entirely on the **GitLab Duo Agent Platform**: 5 custom flows,
 4 custom agents, 5 triggers, 3 foundational flows, 1 MCP server. Everything in
 this repository was created after 2026-10-05. License: [MIT](LICENSE).
 
-> Project: https://gitlab.com/hanwg666/gitlab-autopilot · Pipelines: https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines ·
-> Releases: https://gitlab.com/hanwg666/gitlab-autopilot/-/releases · Demo video: `<YOUTUBE_URL>` *(added at submission)*
+> **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
+> **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
+> Demo video: `<YOUTUBE_URL>` *(added at submission)*. Both projects receive every commit through one GitHub Actions mirror (`.github/workflows/mirror-to-gitlab.yml`).
 
 ## The application under Autopilot: `pulse`
 
@@ -108,6 +109,7 @@ Everything below is a page in this project; nothing needs to be run locally.
 
 | minute | open | what you should see |
 |---|---|---|
+| 0 | [AI > Sessions](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/automate/agent_sessions) · [AI > Flows](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/automate/flows) · [AI > Agents](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/automate/agents) in the **hackathon project** | the 5 custom flows and 4 custom agents registered in the Agent Platform, their triggers, and the real sessions (issue → Planner/Developer → MR, MR → Reviewer, pipeline → Security Fixer / Incident Responder / Closer). The same definitions are versioned in `.gitlab/duo/`. *(paths as the UI shows them; see `.gitlab/duo/triggers.md`)* |
 | 1 | [Pipelines](https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines) → the latest `main` pipeline | 12 stages left to right: `version` → `test` `lint` → `semgrep-sast` `secret_detection` `pip-audit` → `build-image` → `container_scanning` `build-wheel` → `release` → `deploy-staging` → `verify-staging` → `deploy-production` → `journey-card` `audit-trail` → `demo:*` (manual). Every job is green; click any for its log. |
 | 2 | [Releases](https://gitlab.com/hanwg666/gitlab-autopilot/-/releases) · [Container Registry](https://gitlab.com/hanwg666/gitlab-autopilot/container_registry) · [Package Registry](https://gitlab.com/hanwg666/gitlab-autopilot/-/packages) | `v0.1.0`, `v0.1.1` cut by `release-cli` with generated notes and asset links; the image tagged by commit SHA, `latest` and `vX.Y.Z`; the `pulse-monitor` wheel per version. |
 | 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until `RENDER_API_KEY` is present, then live `onrender.com` URLs). |

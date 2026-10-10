@@ -5,9 +5,9 @@
       "command": "python",
       "args": ["-m", "mcp_server.pulse_mcp", "--transport", "stdio"],
       "env": {
-        "PULSE_ENV_STAGING_URL": "https://hanwg666-pulse-staging.hf.space",
-        "PULSE_ENV_PRODUCTION_URL": "https://hanwg666-pulse-prod.hf.space",
-        "PULSE_GITLAB_PROJECT": "123-group8634541/123-project"
+        "PULSE_ENV_STAGING_URL": "https://pulse-staging-yy2c.onrender.com",
+        "PULSE_ENV_PRODUCTION_URL": "https://pulse-prod-z0fn.onrender.com",
+        "PULSE_GITLAB_PROJECT": "hanwg666/gitlab-autopilot"
       },
       "approvedTools": true
     }
