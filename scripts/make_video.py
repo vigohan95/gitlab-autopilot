@@ -94,8 +94,8 @@ SHOTS: list[tuple[str, str]] = [
     ),
 ]
 DUO_SHOT = (
-    "GitLab Duo Agent Platform — live session",
-    "In the hackathon project the same work is started by a GitLab Duo trigger: here is the session. The planner posts a plan citing the policy; the developer branches, writes the code and the tests, and opens the merge request.",
+    "GitLab Duo Agent Platform — a real run",
+    "In the hackathon project the work is started by a GitLab Duo trigger. The Planner-and-Developer flow posts its plan on the issue, citing the policy, then writes the code and the tests and opens the merge request. GitLab Duo Code Review reads it; the policy check approves. The agents did the work; the pipeline kept the gate.",
 )
 
 # ------------------------------------------------------------------------------------------------------------
@@ -344,7 +344,7 @@ def record(
     out: Path,
     shots_def: list[tuple[str, str]],
     narration: list[float],
-    duo_session: str | None,
+    duo: tuple[str, str | None] | None,
     headed: bool,
 ) -> list[dict]:
     from playwright.sync_api import sync_playwright  # type: ignore
@@ -398,13 +398,19 @@ def record(
         rec.pause(1.0)
         rec.end(need[n - 1])
 
-        # optional Duo session shot
-        if duo_session:
+        # optional Duo shot: the flow's plan note on the hackathon issue, then the MR it opened (public pages)
+        if duo:
             shot(DUO_SHOT[0])
-            rec.goto(duo_session, settle=4.0)
-            rec.still(stills, "02b-duo-session")
-            rec.scroll_by(500, 2.0)
-            rec.scroll_by(500, 2.0)
+            rec.goto(duo[0], settle=3.5)
+            rec.reveal("has started", dy=-120, settle=1.2, passes=2)
+            rec.reveal("Plan for", dy=-100, settle=1.4, passes=1)
+            rec.still(stills, "02b-duo-plan-note")
+            rec.scroll_by(420, 2.2)
+            if duo[1]:
+                rec.goto(duo[1], settle=3.5)
+                rec.reveal("I finished my review", dy=-120, settle=1.4, passes=2)
+                rec.still(stills, "02c-duo-mr-review")
+                rec.scroll_by(380, 2.0)
             rec.end(need[n - 1])
 
         # 3 MR !1 notes + pipeline
@@ -962,11 +968,16 @@ def main() -> None:
     ap.add_argument("--out", default=str(REPO / "video"))
     ap.add_argument("--work", default=str(Path(tempfile.gettempdir()) / "autopilot-video"))
     ap.add_argument("--step", choices=["all", "narrate", "record", "assemble", "verify"], default="all")
-    ap.add_argument("--duo-session", default=None, help="AI > Sessions URL in the hackathon project; adds the Duo shot")
+    ap.add_argument(
+        "--duo-issue", default=None, help="hackathon-project issue URL with the flow's plan note; adds the Duo shot"
+    )
+    ap.add_argument(
+        "--duo-mr", default=None, help="hackathon-project MR URL opened by the flow (second half of the Duo shot)"
+    )
     ap.add_argument("--headed", action="store_true")
     a = ap.parse_args()
     shots_def = list(SHOTS)
-    if a.duo_session:
+    if a.duo_issue:
         shots_def.insert(2, DUO_SHOT)
     work, out = Path(a.work), Path(a.out)
     work.mkdir(parents=True, exist_ok=True)
@@ -979,7 +990,7 @@ def main() -> None:
         narration = narrate(work, shots_def, a.voice, a.rate)
     if a.step in ("all", "record"):
         print("[2/4] recording")
-        record(work, out, shots_def, narration, a.duo_session, a.headed)
+        record(work, out, shots_def, narration, (a.duo_issue, a.duo_mr) if a.duo_issue else None, a.headed)
     final = out / "autopilot-demo.mp4"
     if a.step in ("all", "assemble"):
         print("[3/4] assembling")
