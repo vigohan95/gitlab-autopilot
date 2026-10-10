@@ -148,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--sites", default=os.environ.get("PULSE_SITES", "gitlab=https://gitlab.com/,render=https://render.com/")
     )
-    ap.add_argument("--chaos", default=os.environ.get("PULSE_CHAOS", ""), help="AUTOPILOT §7 demo-only switch")
+    ap.add_argument("--chaos", default="", help="AUTOPILOT §7 demo-only switch (explicit only; deploys clear it)")
     ap.add_argument("--wait", type=float, default=600, help="seconds to wait for the deploy + health (0 = don't wait)")
     args = ap.parse_args(argv)
 

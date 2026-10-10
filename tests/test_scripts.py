@@ -181,3 +181,28 @@ def test_deploy_hf_402_is_dry_run(monkeypatch, tmp_path, capsys):
     assert deploy_hf.main(["--env", "staging", "--space", "u/pulse-staging", "--version", "0.1.1", "--wait", "0"]) == 0
     assert "HTTP 402" in capsys.readouterr().out
     assert "DEPLOY_URL=https://u-pulse-staging.hf.space" in (tmp_path / "deploy.env").read_text()
+
+
+def test_clear_chaos_switch_uses_render_and_legacy_variable(monkeypatch):
+    import deploy_render
+
+    calls = []
+    monkeypatch.setattr(deploy_render, "set_chaos", lambda env, on: calls.append((env, on)) or "https://p")
+    monkeypatch.setattr(deploy_render, "wait_status", lambda url, want, timeout=180: True)
+
+    class FakeGL:
+        can_write = True
+        project = "1"
+
+        def get_all(self, path, **kw):
+            return [{"key": "PULSE_CHAOS", "environment_scope": "production"}]
+
+        class _C:
+            def delete(self, url, params=None):
+                calls.append(("delete", url))
+                return type("R", (), {"status_code": 204})()
+
+        _client = _C()
+
+    assert incident.clear_chaos_switch(FakeGL()) is True
+    assert ("production", False) in calls and any(c[0] == "delete" for c in calls)

@@ -101,9 +101,10 @@ pipeline, and leaves the incident open for a human to close.
 ## §7 Chaos switch (demo only)
 
 7.1 `PULSE_CHAOS=healthz` makes the service report 503 on `/healthz`. It exists
-so that the self-healing path can be demonstrated and tested. It may be set
-only on the `production` environment variable page by a human, and the
-Incident Responder's first remediation step is to clear it before rolling back.
+so that the self-healing path can be demonstrated and tested. It is flipped on
+the *running* production service only (`demo.py chaos on`, i.e. an operator
+action, never by a deployment: every deployment removes it), and the first
+remediation step of the incident path is to clear it before rolling back.
 
 ## §8 Budgets and retries
 

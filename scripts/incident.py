@@ -32,6 +32,35 @@ def recent_cutoff() -> str:
     return (datetime.now(UTC) - timedelta(hours=REUSE_WINDOW_HOURS)).isoformat(timespec="seconds")
 
 
+def clear_chaos_switch(gl: GitLab) -> bool:
+    """Remediation step 1 (AUTOPILOT §7.1): if the demo chaos switch is on, turn it off on the live service.
+
+    Returns True when a switch was found and cleared. Also removes a legacy project variable if present.
+    """
+    cleared = False
+    try:
+        import deploy_render
+
+        url = deploy_render.set_chaos("production", False)  # no-op without RENDER_API_KEY
+        if url:
+            cleared = True
+            print(f"chaos switch cleared on the live production service ({url}); waiting for /healthz 200")
+            deploy_render.wait_status(url, 200, timeout=180)
+    except Exception as exc:  # noqa: BLE001
+        warn(f"could not clear the chaos switch on Render: {exc}")
+    if gl.can_write:
+        try:
+            if any(v["key"] == "PULSE_CHAOS" for v in gl.get_all("variables")):
+                gl._client.delete(
+                    f"/projects/{gl.project}/variables/PULSE_CHAOS", params={"filter[environment_scope]": "production"}
+                )
+                cleared = True
+                print("legacy PULSE_CHAOS project variable removed")
+        except Exception as exc:  # noqa: BLE001
+            warn(f"could not inspect CI variables: {exc}")
+    return cleared
+
+
 def pick_rollback_target(releases: list[dict], deployed_version: str | None) -> str | None:
     """Newest release tag strictly older than the deployed one (releases are newest-first)."""
     tags = [r["tag_name"] for r in releases]
@@ -98,22 +127,7 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_url = os.environ.get("CI_PIPELINE_URL", "")
     prod = next((t for t in failed if t["name"] == "production"), None)
 
-    chaos_cleared = False
-    if prod and gl.can_write:
-        try:
-            chaos = [
-                v
-                for v in gl.get_all("variables")
-                if v["key"] == "PULSE_CHAOS" and v["environment_scope"] == "production"
-            ]
-            if chaos:
-                gl._client.delete(
-                    f"/projects/{gl.project}/variables/PULSE_CHAOS", params={"filter[environment_scope]": "production"}
-                )
-                chaos_cleared = True
-                print("chaos switch PULSE_CHAOS found on production and cleared (AUTOPILOT §7.1)")
-        except Exception as exc:  # noqa: BLE001
-            warn(f"could not inspect CI variables: {exc}")
+    chaos_cleared = clear_chaos_switch(gl) if prod else False
 
     rollback_to = None
     if prod and not args.no_rollback:
@@ -165,8 +179,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
         if pipe and incident_iid and gl.can_write:
             extra = (
-                "\n\nRemediation step 1: the demo chaos switch `PULSE_CHAOS` was set on `production` and has been "
-                "cleared; the rollback deployment removes it from the running service (AUTOPILOT §7.1)."
+                "\n\nRemediation step 1: the chaos switch `PULSE_CHAOS` was found on `production` and has been "
+                "cleared on the live service (AUTOPILOT §7.1); step 2 is the rollback below."
                 if chaos_cleared
                 else ""
             )

@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
         "--sites", default=os.environ.get("PULSE_SITES", "gitlab=https://gitlab.com/,hf=https://huggingface.co/")
     )
     ap.add_argument("--wait", type=float, default=420, help="seconds to wait for /healthz (0 = don't wait)")
-    ap.add_argument("--chaos", default=os.environ.get("PULSE_CHAOS", ""), help="AUTOPILOT §7 demo-only switch")
+    ap.add_argument("--chaos", default="", help="AUTOPILOT §7 demo-only switch (explicit only; deploys clear it)")
     args = ap.parse_args(argv)
 
     url = space_url(args.space)
