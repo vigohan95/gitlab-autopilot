@@ -46,6 +46,38 @@ def test_summary_uptime_and_latency():
     assert rows["empty"]["uptime_pct"] is None
 
 
+def test_summary_percentiles():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    for lat in [50.0, 10.0, 40.0, 20.0, 30.0]:
+        s.record_check(a.id, True, 200, lat)
+    row = s.summary()[0]
+    assert row["p50_latency_ms"] == 30.0
+    assert row["p95_latency_ms"] == 50.0
+    assert row["mean_latency_ms"] == 30.0
+
+
+def test_summary_percentiles_none_without_successes():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    s.add_site("empty", "https://e.test/")
+    s.record_check(a.id, False, None, None, "ConnectError")
+    rows = {r["name"]: r for r in s.summary()}
+    for name in ("a", "empty"):
+        assert rows[name]["p50_latency_ms"] is None
+        assert rows[name]["p95_latency_ms"] is None
+
+
+def test_summary_percentiles_exclude_failed_probes():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    s.record_check(a.id, True, 200, 10.0)
+    s.record_check(a.id, False, 500, 9999.0, "HTTP 500")
+    row = s.summary()[0]
+    assert row["p50_latency_ms"] == 10.0
+    assert row["p95_latency_ms"] == 10.0
+
+
 def test_seed_is_idempotent():
     s = Store()
     s.seed([("a", "https://a.test/")])
