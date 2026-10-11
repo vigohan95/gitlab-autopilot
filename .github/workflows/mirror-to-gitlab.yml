@@ -17,7 +17,8 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
         run: |
           if [ -z "$GITLAB_TOKEN" ]; then echo "GITLAB_TOKEN secret not set; skipping mirror"; exit 0; fi
-          git push "https://oauth2:${GITLAB_TOKEN}@gitlab.com/hanwg666/gitlab-autopilot.git" HEAD:main
+          git push -o ci.skip "https://oauth2:${GITLAB_TOKEN}@gitlab.com/hanwg666/gitlab-autopilot.git" HEAD:main
+          # history project: ci.skip since 2026-10-10 (Free-tier CI quota exhausted); pipelines run in the showcase project
       - name: Push to the Transcend hackathon showcase project
         env:
           GITLAB_SHOWCASE_TOKEN: ${{ secrets.GITLAB_SHOWCASE_TOKEN }}

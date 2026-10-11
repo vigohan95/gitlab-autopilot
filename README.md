@@ -1,5 +1,7 @@
 # Autopilot — one issue in, production out
 
+> **Note (2026-10-10):** the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the half-hourly monitor and the demo scenes. New pipelines run in the judged (showcase) project; the history here stays as evidence.
+
 **Code generation is solved. Autopilot takes over everything after the code.**
 You create one GitLab issue with the label `autopilot`. Agents plan it, build
 it, review it against a written policy, let the scanners judge it, fix what the
