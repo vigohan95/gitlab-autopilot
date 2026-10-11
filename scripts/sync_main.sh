@@ -11,3 +11,14 @@ else
   echo "rebasing onto gitlab/main ($(git rev-parse --short gitlab/main))"
   git -c user.name="Han Vigo" -c user.email=hanwg666@gmail.com rebase gitlab/main
 fi
+
+# The judged project (showcase) also merges on its own (Autopilot auto-merge); merge it in too so the
+# mirror push fast-forwards there as well.
+git remote get-url showcase >/dev/null 2>&1 || git remote add showcase https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase.git
+git fetch -q showcase main
+if git merge-base --is-ancestor showcase/main HEAD; then
+  echo "main already contains showcase/main ($(git rev-parse --short showcase/main))"
+else
+  echo "merging showcase/main ($(git rev-parse --short showcase/main))"
+  git -c user.name="Han Vigo" -c user.email=284575144+vigohan95@users.noreply.github.com merge --no-edit showcase/main
+fi
