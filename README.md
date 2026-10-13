@@ -1,13 +1,32 @@
 # Autopilot — one issue in, production out
 
-> **Note (2026-10-10):** the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the half-hourly monitor and the demo scenes. New pipelines run in the judged (showcase) project; the history here stays as evidence.
-
 **Code generation is solved. Autopilot takes over everything after the code.**
 You create one GitLab issue with the label `autopilot`. Agents plan it, build
 it, review it against a written policy, let the scanners judge it, fix what the
 scanners find, merge it, package it, release it, promote it from staging to
 production, watch it in production, roll it back if it breaks, and write the
 story back on your issue. Nine DevSecOps stages, zero humans in the loop.
+
+**It ran for real on 2026-10-10 (every link is a public page):** one human filed
+[issue #2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/2) with the label `autopilot`. The `Work item created`
+trigger started the **Planner + Developer flow** (session 9286698), which posted a
+[plan citing AUTOPILOT §2.1 §2.2 §3.4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/2#note_3989394688), committed
+4 files (code + tests) and opened [MR !1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1). The
+`review-handoff` job started **GitLab Duo Code Review** (session 9286720):
+["found nothing to comment on"](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1#note_3989401351).
+`policy-check` [approved](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1#note_3989402561). The
+`auto-merge` gate **refused twice, honestly**
+([1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1#note_3989403255): it counted all 44 pre-existing
+High/Critical base-image findings, the policy says *new*;
+[2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1#note_3989443276): the finding key still carried the
+per-commit image tag), then [passed](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1#note_3989491766)
+after the gate was fixed and the MR rebased: **MR !1 merged at 14:10Z**
+(`de42064a`), closing #2. [Main pipeline 2933589447](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2933589447)
+posted the [journey card](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/2#note_3989524609); the `Pipeline passed`
+trigger started the **Closer flow** ([pipeline 2933596153](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2933596153)),
+which wrote the [narrative](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/2#note_3989528589) on the issue at
+14:18Z. One human action; agents planned, wrote and narrated; CI kept the gate.
+Row 0 of the judges' table below has the details.
 
 Built for the GitLab **Life After Code** hackathon (Path A · Start Fresh ·
 Hands-off). Everything in this repository was created after 2026-10-05.
@@ -27,12 +46,14 @@ reasoning layer — 5 custom flows, 4 custom agents, 5 triggers and a read-only
 MCP server, defined in `.gitlab/duo/` and registered in the showcase project's
 Agent Platform (plan/create by the Planner + Developer flow, policy review by
 the Reviewer flow, security fixes, incident RCA, the narrative journey card).
-Status on 2026-10-10: the **four agents are registered and enabled** in the
-hackathon project (AI > Agents); flow `f2-reviewer` is registered in the AI
-Catalog; enabling the flows in the project and creating the triggers are
-pending (they need the project owner's role). Session links are added to the
-table below as each flow runs for real; until a row has a session link, treat
-that flow as *designed and registered*, not as *executed*.
+Status on 2026-10-13: the four agents, five flows and five triggers are
+registered and enabled in the hackathon project. **Executed for real:** F1
+Planner + Developer (session 9286698), Code Review (session 9286720) and F5
+Closer (workflow pipeline 2933596153), see row 0 of the judges' table. **Not
+executed:** F2 did not fire for the flow-created MR (triggers need a human
+actor; the `review-handoff` CI job covered review); F3 and F4 ran only triage
+sessions because no scanner failure or incident occurred in the hackathon
+project. Treat those two as *designed and registered*, not as *executed*.
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
@@ -160,7 +181,7 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 
 | piece | files | notes |
 |---|---|---|
-| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered in the hackathon project; sessions are linked from the judges' table once run |
+| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered and enabled in the hackathon project; F1 and F5 have run for real (judges' table, row 0), F2 did not fire for a flow-created MR, F3/F4 triage only |
 | 4 custom agents | [`.gitlab/duo/agents/`](.gitlab/duo/agents) | `autopilot-reviewer`, `security-fixer`, `incident-responder`, `release-scribe` (for Chat and the UI; their prompts are embedded in the flows because custom flows cannot call custom agents) |
 | 5 triggers | [`.gitlab/duo/triggers.md`](.gitlab/duo/triggers.md) | work item created, MR created, pipeline failed ×2, pipeline passed |
 | 3 foundational flows | — | Developer, Code Review (with [`mr-review-instructions.yaml`](.gitlab/duo/mr-review-instructions.yaml)), Fix CI/CD Pipeline |
@@ -231,7 +252,9 @@ Everything is free-tier; no card is needed anywhere.
 
 `DEMO.md` is the runbook: `scripts/demo.py` (or the manual `demo:*` jobs on the main
 pipeline) plays the three scenes — hands-off merge + release, security gate, chaos → incident →
-rollback — through the API with only `AUTOPILOT_TOKEN`.
+rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
+
+[^quota]: Since 2026-10-10 the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the half-hourly monitor and the demo scenes. The mirror pushes there with `ci.skip`; new pipelines run in the judged (showcase) project, and the history project's pipelines, releases, environments and incidents stay as evidence.
 
 ## Local development
 
