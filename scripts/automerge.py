@@ -58,18 +58,28 @@ def new_high_findings(
     return new, len(mr_v)
 
 
+# Pipeline sources that never run the security scanners (.gitlab-ci.yml rules): the monitor schedule, rollback
+# triggers, parent/child and chat-ops pipelines.
+NON_SCANNING_SOURCES = {"schedule", "trigger", "pipeline", "parent_pipeline", "chat"}
+
+
 def baseline_pipelines(gl: GitLab, target_branch: str, default_branch: str) -> list[tuple[str, int]]:
     """Latest green pipeline on the target branch and on the default branch.
 
     Found in the 2026-10-14 security drill: a fix MR targeting a feature branch whose only pipeline had failed
     at ``pip-audit`` (so container scanning never ran there) had no baseline, and every pre-existing base-image
     CVE counted as new. Findings already present on the default branch are never new to an MR.
+
+    Only pipelines that run the scanners count (run 5 of the same drill): scheduled monitor runs, rollback
+    triggers and other non-scanning sources are skipped, otherwise the newest green pipeline on main is a
+    scanner-free schedule run with zero findings and every pre-existing CVE counts as new again.
     """
     out: list[tuple[str, int]] = []
     for ref in dict.fromkeys([target_branch, default_branch]):
-        found = gl.get("pipelines", ref=ref, status="success", per_page=1)
-        if found:
-            out.append((ref, found[0]["id"]))
+        found = gl.get("pipelines", ref=ref, status="success", per_page=20) or []
+        scanning = [p for p in found if p.get("source") not in NON_SCANNING_SOURCES]
+        if scanning:
+            out.append((ref, scanning[0]["id"]))
     return out
 
 

@@ -256,6 +256,25 @@ def test_baseline_falls_back_to_default_branch():
     assert automerge.baseline_pipelines(GL(), "main", "main") == [("main", 7)]
 
 
+def test_baseline_skips_scanner_free_schedule_pipeline():
+    """Drill run 5: newest green main pipeline was the 08:08 monitor schedule (no scanners, 0 findings)."""
+    import automerge
+
+    class GL:
+        project = "1"
+
+        def get(self, path, **params):
+            return [{"id": 9, "source": "schedule"}, {"id": 8, "source": "push"}]
+
+    assert automerge.baseline_pipelines(GL(), "main", "main") == [("main", 8)]
+
+    class OnlySchedules(GL):
+        def get(self, path, **params):
+            return [{"id": 9, "source": "schedule"}]
+
+    assert automerge.baseline_pipelines(OnlySchedules(), "main", "main") == []
+
+
 def test_reviewer_gate_respects_agent_verdict():
     """2026-10-14 drill: policy-check's scoped label must not override the reviewer agent's HUMAN REQUIRED."""
     import automerge
