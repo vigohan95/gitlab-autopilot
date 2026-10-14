@@ -36,7 +36,8 @@ URL: https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/show
    ```
 
    and take the number at the end of `gid://gitlab/Ai::Catalog::ItemConsumer/<number>`. With it set, every
-   `autopilot` MR pipeline starts F2 from CI and `review-approve` turns F2's APPROVED verdict into a real approval.
+   `autopilot` MR pipeline starts F2 from CI, and F2's newest signed verdict note decides §3.2 in `auto-merge`.
+   (`review-approve` also tries to record an MR approval; in the showcase that call answers 401, see AUTOPILOT §3.2.)
    Flags: not protected, not masked (it is not a secret).
 
 ---

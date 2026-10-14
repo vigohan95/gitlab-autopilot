@@ -24,8 +24,12 @@ Notes from the docs (docs.gitlab.com/user/duo_agent_platform/triggers/):
   **Confirmed on MR !1 (2026-10-10): T2 did not fire for the flow-created MR.** Fallback in place: the
   `review-handoff` CI job starts the Code Review flow *and* F2 via the API (`scripts/start_flow.py`; F2 is
   addressed by its AI Catalog consumer id, CI variable `AUTOPILOT_F2_CONSUMER_ID`), the `review-approve`
-  job turns F2's `Autopilot review: APPROVED` note into a GitLab approval made by the CI token
-  (`scripts/review_approve.py`, honest note), and the `auto-merge` CI job enforces AUTOPILOT §3 regardless.
+  job asks GitLab to record an approval with the CI token when F2's `Autopilot review: APPROVED` note appears
+  (`scripts/review_approve.py`), and the `auto-merge` CI job enforces AUTOPILOT §3 regardless. **The verdict is
+  not a real MR approval in this project:** on MR !4 (2026-10-14) the approve call answered 401 and `approved_by`
+  stayed empty. Likely cause: `AUTOPILOT_TOKEN` is the human member's personal access token, GitLab records that
+  human as the author of flow-created MRs, and "Prevent approval by merge request creator" is on (the default on
+  Premium/Ultimate). So §3.2 is decided by F2's newest signed verdict note, which is what `auto-merge` reads.
 - T3/T4/T5 fire on pipeline state changes of pipelines that a human caused (merge, schedule
   owner). Scheduled pipelines run as the schedule owner (a human) `[VERIFY-IN-UI]`.
 - **Confirmed in the 2026-10-14 drill (`docs/DRILL-2026-10-14.md`):** T3 started F3 on the failed pipeline of the
