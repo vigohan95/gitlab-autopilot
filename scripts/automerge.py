@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 
 from gitlab_api import GitLab, warn
 from policy import evaluate_mr, load_policy
@@ -75,8 +76,9 @@ def baseline_pipelines(gl: GitLab, target_branch: str, default_branch: str) -> l
 def reviewer_gate(
     approved_by: list[str], verdict: str | None, labels: list[str], approved_label: str
 ) -> tuple[bool, str]:
-    """§3.2 decision. A real MR approval or the reviewer agent's newest signed verdict decides; the
-    ``autopilot::approved`` label only counts when no reviewer verdict exists (no reviewer agent enabled).
+    """§3.2 decision. The reviewer agent's newest signed verdict decides (a recorded MR approval also counts, but
+    in the showcase none is recorded: the approve call answers 401 for our token); the ``autopilot::approved``
+    label only counts when no reviewer verdict exists (no reviewer agent enabled).
 
     Found in the 2026-10-14 drill: policy-check added the scoped label ``autopilot::approved``, which made GitLab
     drop the reviewer agent's ``autopilot::needs-human``, and the gate then read the label as the reviewer's
@@ -93,10 +95,90 @@ def reviewer_gate(
     return False, "§3.2 no approval from the reviewer agent yet"
 
 
+# GitLab Duo Code Review posts as this user on GitLab.com (user id 21826781, "GitLab Duo").
+DUO_BOTS = ("GitLabDuo",)
+
+
+def unresolved_threads(discussions: list[dict], bots: tuple[str, ...] = DUO_BOTS) -> list[dict]:
+    """Unresolved resolvable threads of a merge request, from ``GET /merge_requests/:iid/discussions``.
+
+    A thread counts when it has at least one non-system note with ``resolvable: true`` and ``resolved: false``
+    (GitLab resolves a thread by resolving all of its resolvable notes). Plain comments, including the agents'
+    signed verdict notes and the policy notes, are not resolvable and never count. Each entry:
+    ``{"id", "note_id", "author", "duo", "path", "line"}``; ``duo`` is True when the thread was started by a
+    GitLab Duo Code Review bot account.
+    """
+    out: list[dict] = []
+    for d in discussions:
+        notes = [n for n in d.get("notes") or [] if not n.get("system")]
+        open_notes = [n for n in notes if n.get("resolvable") and not n.get("resolved")]
+        if not open_notes:
+            continue
+        first = notes[0]
+        pos = first.get("position") or {}
+        out.append(
+            {
+                "id": d.get("id"),
+                "note_id": first.get("id"),
+                "author": (first.get("author") or {}).get("username", ""),
+                "duo": (first.get("author") or {}).get("username", "") in bots,
+                "path": pos.get("new_path") or pos.get("old_path"),
+                "line": pos.get("new_line") or pos.get("old_line"),
+            }
+        )
+    return out
+
+
+def threads_gate(threads: list[dict], mr_url: str = "") -> tuple[bool, str]:
+    """§3.7 decision: any unresolved resolvable thread holds the merge; Duo Code Review threads are named first.
+
+    Found in the 2026-10-14 run 4 (MR !4): GitLab Duo Code Review left a valid finding on tests/test_app.py two
+    minutes before auto-merge, which merged past it because findings were advisory.
+    """
+    if not threads:
+        return True, "§3.7 no unresolved review threads"
+    threads = sorted(threads, key=lambda t: not t["duo"])
+    duo = sum(1 for t in threads if t["duo"])
+    links = []
+    for t in threads[:5]:
+        where = f" on `{t['path']}`" + (f" line {t['line']}" if t["line"] else "") if t["path"] else ""
+        who = "GitLab Duo Code Review" if t["duo"] else f"@{t['author']}"
+        ref = f"[note {t['note_id']}]({mr_url}#note_{t['note_id']})" if mr_url else f"note {t['note_id']}"
+        links.append(f"{who}{where} ({ref})")
+    return False, (
+        f"§3.7 {len(threads)} unresolved review thread(s), {duo} from GitLab Duo Code Review: "
+        + "; ".join(links)
+        + ". Resolving them (a human, or a follow-up commit and then resolve) releases the gate on the next "
+        "pipeline or a re-run of `auto-merge`"
+    )
+
+
+def wait_for_duo_review(gl: GitLab, iid: int, seconds: int, interval: int = 20) -> bool:
+    """True once GitLab Duo Code Review has posted anything on the MR, polling for at most ``seconds``.
+
+    ``review-handoff`` starts Code Review at the beginning of the pipeline; on MR !4 it posted its finding at
+    07:37, two minutes before auto-merge ran. Waiting closes the race where the review lands after the gate.
+    """
+    deadline = time.monotonic() + max(seconds, 0)
+    while True:
+        try:
+            notes = gl.get_all(f"merge_requests/{iid}/notes")
+            if any((n.get("author") or {}).get("username") in DUO_BOTS for n in notes):
+                return True
+        except Exception as exc:  # noqa: BLE001
+            warn(f"could not read notes ({type(exc).__name__})")
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(interval)
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mr", type=int, default=int(os.environ.get("CI_MERGE_REQUEST_IID", "0") or 0))
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument(
+        "--review-wait", type=int, default=0, help="seconds to wait for GitLab Duo Code Review to post (§3.7)"
+    )
     args = ap.parse_args(argv)
     if not args.mr:
         print("not a merge request pipeline; nothing to do")
@@ -154,6 +236,23 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001 - endpoint is Ultimate-only; pip-audit job covers §3.3 on Free
         decision.satisfied.append("§3.3")
         decision.reasons.append(f"§3.3 vulnerability API unavailable ({type(exc).__name__}); relying on scanner jobs")
+
+    # §3.7: unresolved review threads (GitLab Duo Code Review findings first) hold the merge.
+    reviewed = wait_for_duo_review(gl, args.mr, args.review_wait if decision.allowed else 0)
+    try:
+        threads = unresolved_threads(gl.get_all(f"merge_requests/{args.mr}/discussions"))
+        mr_url = mr.get("web_url") or ""
+        threads_ok, reason = threads_gate(threads, mr_url)
+        if not reviewed and args.review_wait:
+            reason += f" (GitLab Duo Code Review had not posted after {args.review_wait} s; checked as of now)"
+    except Exception as exc:  # noqa: BLE001 - unreadable threads must not count as resolved
+        threads_ok, reason = False, f"§3.7 could not read review threads ({type(exc).__name__}); a human must check"
+    decision.reasons.append(reason)
+    if threads_ok:
+        decision.satisfied.append("§3.7")
+    else:
+        decision.allowed = False
+        decision.violated.append("§3.7")
 
     body = decision.as_markdown()
     print(body)

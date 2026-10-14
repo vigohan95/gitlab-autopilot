@@ -1,0 +1,174 @@
+[
+  {
+    "id": "6a9f1c2e0b7d4e5f8a1b2c3d4e5f60718293a4b5",
+    "individual_note": true,
+    "notes": [
+      {
+        "id": 4010344001,
+        "type": null,
+        "body": "**Autopilot policy check: auto-merge allowed**\n\n- all policy rules satisfied\n\nautopilot: rules=[§1.1, §1.3, §2.1, §2.2, §3.4, §3.5]",
+        "attachment": null,
+        "author": {"id": 1, "username": "hanwg666", "name": "Han Vigo", "state": "active", "bot": false},
+        "created_at": "2026-10-14T07:34:40.000Z",
+        "updated_at": "2026-10-14T07:34:40.000Z",
+        "system": false,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "resolvable": false,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      }
+    ]
+  },
+  {
+    "id": "0d3c5b7a9e1f2a4c6e8b0d2f4a6c8e0a2c4e6a8c",
+    "individual_note": true,
+    "notes": [
+      {
+        "id": 4010353255,
+        "type": null,
+        "body": "**Autopilot review: APPROVED**\n\n- section 2.1 protected paths: pass\n- section 3.4 size: pass\n\nautopilot: rules=[section 2.1, section 2.2, section 3.4, section 3.5, section 9.1]",
+        "attachment": null,
+        "author": {"id": 43231770, "username": "ai-f2-reviewer-gitlab-ai-hackathon", "name": "f2-reviewer", "state": "active", "bot": true},
+        "created_at": "2026-10-14T07:35:12.000Z",
+        "updated_at": "2026-10-14T07:35:12.000Z",
+        "system": false,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "resolvable": false,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      }
+    ]
+  },
+  {
+    "id": "f1e2d3c4b5a69788796a5b4c3d2e1f0a9b8c7d6e",
+    "individual_note": true,
+    "notes": [
+      {
+        "id": 4010344100,
+        "type": null,
+        "body": "requested review from @GitLabDuo",
+        "attachment": null,
+        "author": {"id": 1, "username": "hanwg666", "name": "Han Vigo", "state": "active", "bot": false},
+        "created_at": "2026-10-14T07:33:30.000Z",
+        "updated_at": "2026-10-14T07:33:30.000Z",
+        "system": true,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "resolvable": false,
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      }
+    ]
+  },
+  {
+    "id": "9b8a7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 4010364289,
+        "type": "DiffNote",
+        "body": "The status-page assertions cannot tell the new `uptime 24h` cell from the existing `uptime` cell: both show the same percentage in this fixture, so the new column's value is not actually tested. Consider asserting the adjacent cells of a row and seeding an older check so the 24h value differs.",
+        "attachment": null,
+        "author": {"id": 21826781, "username": "GitLabDuo", "name": "GitLab Duo", "state": "active", "bot": true},
+        "created_at": "2026-10-14T07:37:21.000Z",
+        "updated_at": "2026-10-14T07:37:21.000Z",
+        "system": false,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "commit_id": null,
+        "position": {
+          "base_sha": "a2f2bbdf04fe3e8adaa9ce7a980aaeb1299ff28c",
+          "start_sha": "a2f2bbdf04fe3e8adaa9ce7a980aaeb1299ff28c",
+          "head_sha": "683de45d00000000000000000000000000000000",
+          "old_path": "tests/test_app.py",
+          "new_path": "tests/test_app.py",
+          "position_type": "text",
+          "old_line": null,
+          "new_line": 112,
+          "line_range": null
+        },
+        "resolvable": true,
+        "resolved": false,
+        "resolved_by": null,
+        "resolved_at": null,
+        "suggestions": [],
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      }
+    ]
+  },
+  {
+    "id": "1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d",
+    "individual_note": false,
+    "notes": [
+      {
+        "id": 4010350001,
+        "type": "DiscussionNote",
+        "body": "Is `uptime_pct` still the last 100 checks?",
+        "attachment": null,
+        "author": {"id": 1, "username": "hanwg666", "name": "Han Vigo", "state": "active", "bot": false},
+        "created_at": "2026-10-14T07:34:00.000Z",
+        "updated_at": "2026-10-14T07:36:00.000Z",
+        "system": false,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "resolvable": true,
+        "resolved": true,
+        "resolved_by": {"id": 1, "username": "hanwg666", "name": "Han Vigo", "state": "active"},
+        "resolved_at": "2026-10-14T07:36:00.000Z",
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      },
+      {
+        "id": 4010350002,
+        "type": "DiscussionNote",
+        "body": "Yes, unchanged; the new key is additive.",
+        "attachment": null,
+        "author": {"id": 43231771, "username": "ai-f1-planner-developer-gitlab-ai-hackathon", "name": "f1-planner-developer", "state": "active", "bot": true},
+        "created_at": "2026-10-14T07:35:00.000Z",
+        "updated_at": "2026-10-14T07:36:00.000Z",
+        "system": false,
+        "noteable_id": 548237888,
+        "noteable_type": "MergeRequest",
+        "project_id": 87424108,
+        "resolvable": true,
+        "resolved": true,
+        "resolved_by": {"id": 1, "username": "hanwg666", "name": "Han Vigo", "state": "active"},
+        "resolved_at": "2026-10-14T07:36:00.000Z",
+        "confidential": false,
+        "internal": false,
+        "imported": false,
+        "imported_from": "none",
+        "noteable_iid": 4,
+        "commands_changes": {}
+      }
+    ]
+  }
+]

@@ -1,4 +1,4 @@
-"""Turn the reviewer agent's verdict into a real GitLab approval (AUTOPILOT §3.2).
+"""Try to record the reviewer agent's verdict as a GitLab approval (AUTOPILOT §3.2).
 
 The F2 Reviewer flow posts a summary note on the merge request:
 
@@ -7,14 +7,18 @@ The F2 Reviewer flow posts a summary note on the merge request:
     ...
     autopilot: rules=[section 2.1, section 2.2, section 3.4, section 3.5, section 9.1]
 
-The flow is also told to approve with ``submit_mr_review``; whether a flow service account's approval
-counts against an approval rule is not something we could verify (Itemator's and GitDone's write-ups say
-the same). So this job — ``review-approve`` in the merge-request pipeline — reads the **latest** verdict
-note, and when it is APPROVED calls ``POST /projects/:id/merge_requests/:iid/approve`` with the CI token
-(``AUTOPILOT_TOKEN``, a project access token). The approval GitLab records is therefore **performed by
-the CI token on the agent's verdict**; the note it leaves says exactly that. With no verdict (F2 did not
-run, or has not finished within ``--wait`` seconds) nothing is approved and ``auto-merge`` falls back to
-the ``policy-check`` label, as §3.2 allows. Never fails the pipeline.
+This job — ``review-approve`` in the merge-request pipeline — reads the **latest** signed verdict note and, when it
+is APPROVED, calls ``POST /projects/:id/merge_requests/:iid/approve`` with ``AUTOPILOT_TOKEN``.
+
+**In the judged showcase project that call answers 401 and no MR approval is recorded** (MR !4, 2026-10-14:
+``approved_by`` is empty). The likely cause: ``AUTOPILOT_TOKEN`` there is the human member's personal access token
+(a Developer cannot create a project access token), and GitLab records that same human as the *author* of every
+flow-created MR (the human who started the flow: !1, !3 and !4 show ``author: hanwg666``). "Prevent approval by
+merge request creator" is on by default on Premium/Ultimate, so the token's user may not approve. Hence §3.2 is
+decided by the reviewer agent's newest signed verdict note (``automerge.reviewer_gate``), not by an approval. On 401
+this job reads ``user_has_approved`` and says which case it was. Where the token is a project access token that did
+not author the MR, the approval is recorded and the note says the CI token made it on the agent's verdict. Never
+fails the pipeline.
 """
 
 from __future__ import annotations
@@ -48,6 +52,21 @@ def parse_verdict(notes: list[dict]) -> tuple[str | None, dict | None]:
     return (best[0], best[1]) if best else (None, None)
 
 
+def explain_401(gl: GitLab, iid: int) -> str:
+    """Why the approve call was refused: already approved, or not permitted (no approval recorded)."""
+    try:
+        state = gl.get(f"merge_requests/{iid}/approvals")
+    except Exception:  # noqa: BLE001
+        state = {}
+    if state.get("user_has_approved"):
+        return "already approved by this token (HTTP 401 on re-approve)"
+    return (
+        "approval not permitted for this token (HTTP 401; no MR approval recorded, approved_by="
+        f"{[a['user']['username'] for a in state.get('approved_by', [])]}). Likely the token's user is the MR "
+        "author under 'Prevent approval by merge request creator'. §3.2 is decided by the verdict note (auto-merge)"
+    )
+
+
 def approve(gl: GitLab, iid: int, verdict_note: dict) -> str:
     """Approve the MR with the CI token; returns a short outcome string. Idempotent across re-runs."""
     note_url = f"{gl.project_web_url()}/-/merge_requests/{iid}#note_{verdict_note.get('id')}"
@@ -56,8 +75,8 @@ def approve(gl: GitLab, iid: int, verdict_note: dict) -> str:
         outcome = "approved"
     except httpx.HTTPStatusError as exc:
         code = exc.response.status_code
-        if code == 401:  # GitLab answers 401 when this user already approved (or the MR cannot be approved)
-            outcome = "already approved by this token (or approval not permitted)"
+        if code == 401:  # GitLab answers 401 whenever the token's user may not approve this MR
+            outcome = explain_401(gl, iid)
         else:
             outcome = f"approve call failed: HTTP {code}"
             warn(outcome)

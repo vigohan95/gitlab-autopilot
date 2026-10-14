@@ -431,8 +431,9 @@ policy-check:
     - python scripts/policy.py --mr "$CI_MERGE_REQUEST_IID" --comment
   rules: *rules_mr
 
-# §3.2 as a real approval: reads F2's "Autopilot review: APPROVED" note and approves the MR with the CI
-# token on that verdict (scripts/review_approve.py says so in its note). Waits for the verdict only when
+# §3.2: waits for F2's "Autopilot review: APPROVED" note and asks GitLab to record an approval with the CI
+# token. In the showcase that call answers 401 and no approval is recorded (the token's user is the MR author),
+# so §3.2 is decided by the verdict note in auto-merge, not by an approval. Waits for the verdict only when
 # F2 could have been started (consumer id set); otherwise exits at once and auto-merge uses the label.
 review-approve:
   stage: govern
@@ -456,7 +457,7 @@ auto-merge:
     - pip-audit
     - build-image
   script:
-    - python scripts/automerge.py --mr "$CI_MERGE_REQUEST_IID"
+    - python scripts/automerge.py --mr "$CI_MERGE_REQUEST_IID" --review-wait 300   # §3.7: let Code Review post
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
 

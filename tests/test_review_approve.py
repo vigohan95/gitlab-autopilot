@@ -1,5 +1,5 @@
-"""Verdict parsing for scripts/review_approve.py (M3: the agent's verdict becomes a GitLab approval) and the
-request body scripts/start_flow.py sends for foundational vs AI Catalog flows."""
+"""Verdict parsing for scripts/review_approve.py (the agent's verdict decides §3.2; an approval is only attempted)
+and the request body scripts/start_flow.py sends for foundational vs AI Catalog flows."""
 
 import sys
 from pathlib import Path
@@ -43,9 +43,14 @@ def test_parse_verdict_ignores_unsigned_system_and_quoted_notes():
 
 
 class _GL:
-    def __init__(self, status=200):
+    def __init__(self, status=200, approvals=None):
         self.status = status
+        self.approvals = approvals or {}
         self.calls = []
+
+    def get(self, path, **kw):
+        self.calls.append(("get", path))
+        return self.approvals
 
     def project_web_url(self):
         return "https://gl/p"
@@ -70,11 +75,20 @@ def test_approve_posts_approval_and_honest_note():
 
 
 def test_approve_is_idempotent_on_401_and_reports_other_errors():
-    gl = _GL(401)
+    gl = _GL(401, {"user_has_approved": True, "approved_by": [{"user": {"username": "autopilot-bot"}}]})
     assert review_approve.approve(gl, 7, {"id": 1}).startswith("already approved")
     assert all(c[0] != "note" for c in gl.calls)
     gl = _GL(403)
     assert review_approve.approve(gl, 7, {"id": 1}) == "approve call failed: HTTP 403"
+
+
+def test_approve_401_without_approval_says_none_was_recorded():
+    """MR !4, 2026-10-14: the approve call answered 401 and approved_by stayed empty (the token's user is the MR
+    author). The job must not call that 'already approved'."""
+    gl = _GL(401, {"approved": True, "approvals_required": 0, "approved_by": [], "user_has_approved": False})
+    out = review_approve.approve(gl, 4, {"id": 4010353255})
+    assert out.startswith("approval not permitted") and "no MR approval recorded" in out and "approved_by=[]" in out
+    assert ("get", "merge_requests/4/approvals") in gl.calls and all(c[0] != "note" for c in gl.calls)
 
 
 def test_main_without_verdict_does_not_approve(monkeypatch, capsys):

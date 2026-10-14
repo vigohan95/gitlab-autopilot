@@ -53,11 +53,15 @@ require a human (`autopilot::human-approved`).
 
 3.1 The merge request pipeline is fully green (no failed required jobs).
 
-3.2 The merge request has been approved by the reviewer agent, which must have
-posted a review that cites this file. When no reviewer agent is enabled on the
-project, the `policy-check` CI job is the reviewer of record: it applies the
-same rules and labels the merge request `autopilot::approved` (or
-`autopilot::needs-human`).
+3.2 The reviewer agent has approved the merge request: its newest signed verdict note
+(`Autopilot review: APPROVED`, ending with `autopilot: rules=[…]` and citing this file) is what decides.
+The verdict is **not** a GitLab MR approval. The `review-approve` job asks GitLab to record one
+(`POST …/merge_requests/:iid/approve` with the CI token), but in the judged project that call answers 401
+and `approved_by` stays empty — likely because the token's user is the human whom GitLab records as the
+author of flow-created merge requests, and "Prevent approval by merge request creator" is on. Where an
+approval is recorded, it satisfies this rule too. When no reviewer agent verdict exists (no reviewer agent
+enabled on the project), the `policy-check` CI job is the reviewer of record: it applies the same rules
+and labels the merge request `autopilot::approved` (or `autopilot::needs-human`).
 
 3.3 Security scanners (SAST, Secret Detection, Dependency Scanning, Container
 Scanning, `pip-audit`) report **no new High or Critical** findings on the
@@ -73,6 +77,18 @@ requests are split or handed to a human.
 
 3.6 Merging is done with "merge when pipeline succeeds", squash on, source
 branch deleted. No force-pushes, ever.
+
+3.7 No unresolved review threads. While the merge request has an unresolved, resolvable
+discussion thread, the merge is held: `auto-merge` labels it `autopilot::needs-human` and its
+note cites §3.7 and links each thread. Threads opened by GitLab Duo Code Review (user
+`GitLabDuo`) are listed first, but any unresolved thread counts — a human's objection is an
+objection too. `auto-merge` first waits up to 5 minutes for Code Review to post, so a review
+that lands late is not missed. Plain comments (verdict notes, policy notes) are not resolvable
+and never hold. **Resolving the thread releases the hold:** a human resolves it after reading
+it, or the Developer flow pushes a follow-up commit that addresses it and resolves the thread
+(the Developer role may resolve threads); the new commit's pipeline runs the gate again, or a
+human re-runs `auto-merge`. Nothing here needs a role above Developer, so the rule cannot
+deadlock the Developer flow.
 
 ## §4 Security remediation
 
@@ -185,6 +201,7 @@ merge_requirements:         # §3
   - no_new_high_or_critical_findings
   - not_draft
   - no_conflicts
+  - no_unresolved_review_threads   # §3.7
 merge_options:              # §3.6
   merge_when_pipeline_succeeds: true
   squash: true
