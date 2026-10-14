@@ -19,7 +19,9 @@ def test_pick_rollback_target_never_rolls_forward():
     assert incident.pick_rollback_target(releases, "0.3.0") == "v0.2.0"
     assert incident.pick_rollback_target(releases, "v0.2.0") == "v0.1.0"
     assert incident.pick_rollback_target(releases, "0.1.0") is None
-    assert incident.pick_rollback_target(releases, "abc1234") == "v0.3.0"
+    # not a release (SHA build, or unknown): no guess -- "the newest release" may be what production runs
+    assert incident.pick_rollback_target(releases, "abc1234") is None
+    assert incident.pick_rollback_target(releases, None) is None
     assert incident.pick_rollback_target([], "0.1.0") is None
 
 

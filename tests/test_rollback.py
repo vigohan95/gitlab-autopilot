@@ -42,12 +42,36 @@ def test_current_prefers_explicit_variables_then_branch():
     assert shlex.split(out) == ["export", "ROLLBACK_TO=v0.1.1", "INCIDENT_IID=7"]
 
 
+# The showcase on 2026-10-14: one release, v0.1.2 (commit ae608db6…); production last deployed by main @ e501b1b.
+V012 = {"tag_name": "v0.1.2", "commit": {"id": "ae608db6c6e964d1358f19e96dd61e6f057bc79e"}}
+V011 = {"tag_name": "v0.1.1", "commit": {"id": "1111111111111111111111111111111111111111"}}
+_DEPLOY_QUERY = {
+    "environment": "production",
+    "status": "success",
+    "order_by": "finished_at",
+    "sort": "desc",
+    "per_page": 1,
+}
+MAIN_DEPLOY = {"iid": 12, "ref": "main", "sha": "e501b1b0000000000000000000000000000000000", "status": "success"}
+
+
 class FakeGL:
-    def __init__(self, can_write=True, branch_status=201):
+    def __init__(self, can_write=True, branch_status=201, releases=None, deployments=None, deployments_error=None):
         self.can_write = can_write
         self.branch_status = branch_status
         self.calls: list[tuple] = []
         self.notes: list[str] = []
+        self._releases = [V012, V011] if releases is None else releases
+        self._deployments = [] if deployments is None else deployments
+        self._deployments_error = deployments_error
+
+    def get(self, path, **params):
+        self.calls.append(("get", path, params))
+        if path == "deployments":
+            if self._deployments_error:
+                raise self._deployments_error
+            return self._deployments
+        raise AssertionError(f"unexpected GET {path}")
 
     def post(self, path, json=None, data=None):
         self.calls.append(("post", path, json))
@@ -67,7 +91,7 @@ class FakeGL:
         return []
 
     def releases(self):
-        return [{"tag_name": "v0.1.2"}, {"tag_name": "v0.1.1"}]
+        return self._releases
 
     def issue_note(self, iid, body):
         self.notes.append(body)
@@ -98,36 +122,94 @@ def test_start_rollback_without_token_falls_back_to_variable_call():
     assert ref == "main" and gl.calls == [("trigger", "main", {"ROLLBACK_TO": "v0.1.1"})]
 
 
-def test_incident_main_replays_the_drill_without_pipeline_variables(tmp_path, monkeypatch):
-    """The 2026-10-14 drill: production 503 on both probes, /version unreadable -> newest release."""
-    report = {
+def _drill_report(version=None):
+    return {
         "ts": "2026-10-14T07:02:30+00:00",
         "targets": [
             {
                 "name": "production",
                 "url": "https://httpbin.org/status/503?probe=",
                 "ok": False,
-                "version": None,
+                "version": version,
                 "checks": [{"path": "/healthz", "status": 503}, {"path": "/version", "status": 503}],
             }
         ],
     }
-    (tmp_path / "monitor-report.json").write_text(json.dumps(report), encoding="utf-8")
+
+
+def _run_incident(tmp_path, monkeypatch, gl, version=None):
+    (tmp_path / "monitor-report.json").write_text(json.dumps(_drill_report(version)), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CI_COMMIT_SHA", "e501b1b")
     monkeypatch.setenv("CI_PIPELINE_ID", "2945603793")
-    gl = FakeGL()
     monkeypatch.setattr(incident, "GitLab", lambda: gl)
     monkeypatch.setattr(incident, "clear_chaos_switch", lambda _gl: False)
-
     assert incident.main([]) == 0
     created = next(c for c in gl.calls if c[:2] == ("post", "issues"))[2]
-    assert set(created["labels"].split(",")) == {"autopilot", "incident", "env::production"}  # F4 finds it by these
-    triggers = [c for c in gl.calls if c[0] == "trigger"]
-    assert triggers == [("trigger", "rollback/v0.1.2/incident-3", {})]
-    assert any("started on `rollback/v0.1.2/incident-3`" in n for n in gl.notes)
     env = (tmp_path / "incident.env").read_text(encoding="utf-8")
-    assert "ROLLBACK_REF=rollback/v0.1.2/incident-3" in env
+    return created, [c for c in gl.calls if c[0] == "trigger"], env
+
+
+def test_incident_main_replays_the_drill_without_a_guessed_target(tmp_path, monkeypatch):
+    """The 2026-10-14 drill, replayed with today's rule: /version unreadable, the only release is v0.1.2 and
+    production's last deployment is a later main commit. The drill picked v0.1.2 (the "newest release" fallback),
+    which may be exactly what production runs (F4's RCA). Now: no target, no trigger, a human-rollback note."""
+    gl = FakeGL(releases=[V012], deployments=[MAIN_DEPLOY])
+    created, triggers, env = _run_incident(tmp_path, monkeypatch, gl)
+    assert set(created["labels"].split(",")) == {"autopilot", "incident", "env::production"}  # F4 finds it by these
+    assert triggers == []
+    assert "No automatic rollback" in created["description"] and "is not a release" in created["description"]
+    assert any(n.startswith("No automatic rollback") and "A human must roll back" in n for n in gl.notes)
+    assert ("get", "deployments", _DEPLOY_QUERY) in gl.calls
+    assert "ROLLBACK_TO=\n" in env and "ROLLBACK_REF=\n" in env
+
+
+def test_incident_main_rolls_back_from_the_deployed_release_without_pipeline_variables(tmp_path, monkeypatch):
+    """/version unreadable, production's last deployment is the v0.1.2 release commit -> v0.1.1, on a branch."""
+    gl = FakeGL(deployments=[{**MAIN_DEPLOY, "sha": V012["commit"]["id"]}])
+    created, triggers, env = _run_incident(tmp_path, monkeypatch, gl)
+    assert set(created["labels"].split(",")) == {"autopilot", "incident", "env::production"}  # F4 finds it by these
+    assert triggers == [("trigger", "rollback/v0.1.1/incident-3", {})]  # no pipeline variables (finding 3)
+    assert "Rollback target: `v0.1.1`" in created["description"] and "`v0.1.2`" in created["description"]
+    assert any("started on `rollback/v0.1.1/incident-3`" in n for n in gl.notes)
+    assert "ROLLBACK_REF=rollback/v0.1.1/incident-3" in env
+
+
+def test_incident_main_prefers_the_version_production_reports(tmp_path, monkeypatch):
+    gl = FakeGL(deployments_error=AssertionError("deployments must not be needed"))
+    created, triggers, _ = _run_incident(tmp_path, monkeypatch, gl, version="0.1.2")
+    assert triggers == [("trigger", "rollback/v0.1.1/incident-3", {})]
+    assert not any(c[:2] == ("get", "deployments") for c in gl.calls)
+
+
+@pytest.mark.parametrize(
+    ("deployment", "expected"),
+    [
+        ({"ref": "rollback/v0.1.1/incident-3", "sha": "e501b1b"}, "v0.1.1"),  # a rollback runs on the monitor's commit
+        ({"ref": "v0.1.2", "sha": "whatever"}, "v0.1.2"),  # a tag pipeline
+        ({"ref": "main", "sha": V011["commit"]["id"]}, "v0.1.1"),  # the release's own main pipeline
+        ({"ref": "main", "sha": "e501b1b"}, None),  # a later main commit: not a release, no guess
+        ({"ref": "rollback/v9.9.9/incident-1", "sha": "x"}, None),  # a branch naming an unknown release
+    ],
+)
+def test_release_of_deployment(deployment, expected):
+    assert incident.release_of_deployment(deployment, [V012, V011])[0] == expected
+
+
+def test_resolve_rollback_target_never_returns_what_production_runs():
+    resolve = incident.resolve_rollback_target
+    after_rollback = [{"iid": 13, "ref": "rollback/v0.1.1/incident-3", "sha": "e501b1b"}]
+    assert resolve(FakeGL(deployments=after_rollback), [V012, V011], None)[0] is None  # v0.1.1 is the oldest
+    assert resolve(FakeGL(deployments=[]), [V012, V011], None) == (
+        None,
+        "`/version` did not answer, and production has no successful deployment",
+    )
+    err = httpx.HTTPStatusError("401", request=httpx.Request("GET", "https://x"), response=httpx.Response(401))
+    target, why = resolve(FakeGL(deployments_error=err), [V012, V011], "abc1234")
+    assert target is None and "could not be read" in why and "`abc1234`, which is not a release" in why
+    assert resolve(FakeGL(), [], "0.1.2") == (None, "the project has no releases")
+    target, why = resolve(FakeGL(deployments=[{**MAIN_DEPLOY, "sha": V012["commit"]["id"]}]), [V012, V011], None)
+    assert target == "v0.1.1" and "#12" in why and "the commit of release `v0.1.2`" in why
 
 
 # ------------------------------------------------------------------ .gitlab-ci.yml wiring

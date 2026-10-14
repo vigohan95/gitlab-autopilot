@@ -106,7 +106,11 @@ their closed issues; it does not invent changes.
 production. A failed production probe opens a GitLab **Incident** automatically.
 
 6.2 Rollback is automatic and goes to the **last successful release** (the
-newest release tag older than the one currently deployed). The Incident
+newest release tag older than the one currently deployed). The deployed
+release is the one production's `/version` reports or, when that names no
+release, the one production's last successful deployment ran (its rollback
+branch, tag, or a release's commit). When neither names a release there is no
+automatic rollback: the incident says a human must roll back. The Incident
 Responder never rolls *forward*. The rollback pipeline runs on a branch named
 `rollback/<tag>/incident-<iid>`, cut from the commit the monitor ran on; the
 deploy jobs build the release tag's commit. The target and the incident are in

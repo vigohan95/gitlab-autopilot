@@ -6,7 +6,15 @@ part of the self-healing loop; the Incident Responder flow then adds the RCA.
 * Incident creation needs ``AUTOPILOT_TOKEN`` (issues API is not reachable with
   CI_JOB_TOKEN). Without it the script still triggers the rollback and warns.
 * Rollback target = newest release tag that is older than the deployed version
-  (§6.2, never roll forward). The rollback is a pipeline on the branch
+  (§6.2, never roll forward). The deployed version is what production's
+  ``/version`` reports; when that is not a release (no answer, or a SHA build),
+  it is the release of production's last successful deployment (Deployments
+  API: rollback-branch name, tag ref, or a release's commit sha). When neither
+  names a release there is **no** target and the incident says a human must
+  roll back. Until 2026-10-14 the fallback was "the newest release", which can
+  be the very release production runs (the drill's F4 RCA pointed this out:
+  the drill picked ``v0.1.2``, the only release, already deployed).
+* The rollback is a pipeline on the branch
   ``rollback/<tag>/incident-<iid>`` (``scripts/rollback_ref.py``), cut from the
   commit the monitor ran on and started through the pipeline-trigger API with
   ``CI_JOB_TOKEN`` and **no pipeline variables**: the judged project refuses
@@ -70,19 +78,84 @@ def clear_chaos_switch(gl: GitLab) -> bool:
     return cleared
 
 
-def pick_rollback_target(releases: list[dict], deployed_version: str | None) -> str | None:
-    """Newest release tag strictly older than the deployed one (releases are newest-first)."""
-    tags = [r["tag_name"] for r in releases]
-    if not tags:
+def _as_tag(version: str | None) -> str | None:
+    if not version:
         return None
-    current = (
-        f"v{deployed_version}" if deployed_version and not str(deployed_version).startswith("v") else deployed_version
+    version = str(version)
+    return version if version.startswith("v") else f"v{version}"
+
+
+def pick_rollback_target(releases: list[dict], deployed_version: str | None) -> str | None:
+    """Newest release tag strictly older than the deployed one (releases are newest-first).
+
+    None when the deployed version is not a release (unknown, or a SHA build) or is the oldest release: rolling
+    "back" to the newest release could redeploy what is already running, so we never guess (§6.2).
+    """
+    tags = [r["tag_name"] for r in releases]
+    current = _as_tag(deployed_version)
+    if current not in tags:
+        return None
+    idx = tags.index(current)
+    return tags[idx + 1] if idx + 1 < len(tags) else None
+
+
+def last_production_deployment(gl: GitLab) -> dict | None:
+    """Production's last successful deployment (Deployments API; needs AUTOPILOT_TOKEN, it is not anonymous)."""
+    deps = gl.get(
+        "deployments", environment="production", status="success", order_by="finished_at", sort="desc", per_page=1
     )
-    if current in tags:
-        idx = tags.index(current)
-        return tags[idx + 1] if idx + 1 < len(tags) else None
-    # Deployed version is not a release (e.g. a SHA build): roll back to the newest release.
-    return tags[0]
+    return deps[0] if isinstance(deps, list) and deps else None
+
+
+def release_of_deployment(deployment: dict, releases: list[dict]) -> tuple[str | None, str]:
+    """(release tag, how it was matched) for the code a deployment put on production; (None, ref@sha) otherwise.
+
+    A rollback pipeline runs on ``rollback/<tag>/…`` but its commit is the monitor's, so the tag comes from the
+    branch name first; then a tag pipeline's ref; then a release whose commit is exactly the deployed sha. A
+    commit that is not a release (a later push to main) does not name a release: no guess.
+    """
+    ref = deployment.get("ref") or ""
+    sha = deployment.get("sha") or ""
+    tags = [r["tag_name"] for r in releases]
+    parsed = rollback_ref.parse(ref)
+    if parsed and parsed[0] in tags:
+        return parsed[0], f"rollback branch `{ref}`"
+    if ref in tags:
+        return ref, f"tag `{ref}`"
+    for r in releases:
+        if sha and (r.get("commit") or {}).get("id") == sha:
+            return r["tag_name"], f"`{ref}` at `{sha[:8]}`, the commit of release `{r['tag_name']}`"
+    return None, f"`{ref}` at `{sha[:8]}`"
+
+
+def resolve_rollback_target(gl: GitLab, releases: list[dict], reported_version: str | None) -> tuple[str | None, str]:
+    """(target tag or None, the reason in words) for AUTOPILOT §6.2. ``reported_version``: production's /version."""
+    if not releases:
+        return None, "the project has no releases"
+    reported = _as_tag(reported_version)
+    if reported in [r["tag_name"] for r in releases]:
+        deployed, basis = reported, f"production's `/version` reports `{reported}`"
+    else:
+        seen = (
+            f"`/version` reported `{reported_version}`, which is not a release"
+            if reported_version
+            else "`/version` did not answer"
+        )
+        try:
+            dep = last_production_deployment(gl)
+        except Exception as exc:  # noqa: BLE001
+            return None, f"{seen}, and production's deployments could not be read ({exc})"
+        if not dep:
+            return None, f"{seen}, and production has no successful deployment"
+        deployed, how = release_of_deployment(dep, releases)
+        where = f"production's last successful deployment (#{dep.get('iid', '?')}, {how})"
+        if not deployed:
+            return None, f"{seen}, and {where} is not a release"
+        basis = f"{seen}; {where} is `{deployed}`"
+    target = pick_rollback_target(releases, deployed)
+    if not target:
+        return None, f"{basis}, and no older release exists"
+    return target, f"{basis}; `{target}` is the newest release older than that"
 
 
 def start_rollback(
@@ -109,7 +182,9 @@ def start_rollback(
     return gl.trigger_pipeline(branch, {}), branch
 
 
-def build_description(report: dict, failed: list[dict], rollback_to: str | None, pipeline_url: str) -> str:
+def build_description(
+    report: dict, failed: list[dict], rollback_to: str | None, pipeline_url: str, rollback_basis: str = ""
+) -> str:
     lines = [
         "## Summary",
         "",
@@ -125,7 +200,11 @@ def build_description(report: dict, failed: list[dict], rollback_to: str | None,
         "",
         "## Automatic remediation",
         "",
-        f"- Rollback target: `{rollback_to}`" if rollback_to else "- No earlier release exists; rollback not possible.",
+        (
+            f"- Rollback target: `{rollback_to}` ({rollback_basis or 'AUTOPILOT §6.2'})."
+            if rollback_to
+            else f"- **No automatic rollback:** {rollback_basis or 'no rollback target'}. A human must roll back."
+        ),
         "- The Incident Responder flow will attach the root-cause analysis to this incident.",
         "",
         "<details><summary>monitor-report.json</summary>",
@@ -162,12 +241,14 @@ def main(argv: list[str] | None = None) -> int:
 
     chaos_cleared = clear_chaos_switch(gl) if prod else False
 
-    rollback_to = None
+    rollback_to, rollback_basis = None, ""
     if prod and not args.no_rollback:
         try:
-            rollback_to = pick_rollback_target(gl.releases(), prod.get("version"))
+            rollback_to, rollback_basis = resolve_rollback_target(gl, gl.releases(), prod.get("version"))
         except Exception as exc:  # noqa: BLE001
-            warn(f"could not list releases: {exc}")
+            rollback_basis = f"the releases could not be listed ({exc})"
+            warn(rollback_basis)
+        print(f"rollback target: {rollback_to or 'none'} ({rollback_basis})")
 
     incident_iid = None
     if gl.can_write:
@@ -186,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
                     "title": title,
                     "issue_type": "incident",
                     "labels": ",".join(INCIDENT_LABELS),
-                    "description": build_description(report, failed, rollback_to, pipeline_url),
+                    "description": build_description(report, failed, rollback_to, pipeline_url, rollback_basis),
                 },
             )
             incident_iid = inc["iid"]
@@ -196,6 +277,13 @@ def main(argv: list[str] | None = None) -> int:
 
     pipe: dict = {}
     rollback_on = ""
+    if prod and not rollback_to and not args.no_rollback and incident_iid and gl.can_write:
+        gl.issue_note(
+            incident_iid,
+            f"No automatic rollback: {rollback_basis}. A human must roll back: pick the release, then run a "
+            "pipeline on the branch `rollback/<tag>/incident-<iid>` (docs/RUNBOOK-M1-M2.md, M2.3)."
+            "\n\nautopilot: rules=[§6.2]",
+        )
     if prod and rollback_to and not args.no_rollback:
         try:
             from_ref = os.environ.get("CI_COMMIT_SHA") or args.ref
