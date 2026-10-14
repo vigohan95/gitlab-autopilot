@@ -41,7 +41,9 @@ def test_estimate_ignores_jobs_without_duration_and_writes_json(tmp_path):
 def test_monitor_cadence_arithmetic():
     # measured on the history project: a healthy scheduled run = monitor 30 s + semgrep-sast 31 s + audit-trail 32 s
     assert sci.schedule_minutes_per_day(96, 93) == 148.8  # every 15 min, three jobs
-    assert sci.schedule_minutes_per_day(12, 30) == 6.0  # every 2 h, monitor only
+    # measured on the showcase, scheduled pipeline 2945631275 (2026-10-14): monitor 32.09 s + gemnasium 47.57 s
+    assert sci.schedule_minutes_per_day(12, 32.09 + 47.57) == 15.9  # every 2 h, as it really ran until 2026-10-14
+    assert sci.schedule_minutes_per_day(12, 32.09) == 6.4  # every 2 h, monitor only (docs/SCI.md §4 correction)
 
 
 def test_lead_time_issue_to_production():

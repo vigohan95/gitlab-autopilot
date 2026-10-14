@@ -24,18 +24,37 @@ stages:
   - govern
   - demo
 
+# Security scanners run on merge request and main pipelines only. The scheduled monitor and rollback pipelines
+# change no code, so a scan there produces nothing new (the 2026-10-14 drill's scheduled pipeline 2945603793 ran
+# gemnasium-python-dependency_scanning for 54 s; docs/SCI.md §4). Two layers:
+#   1. these workflow variables switch off EVERY analyzer of the four templates (each template job's first rule
+#      is `$<SCANNER>_DISABLED == 'true'` -> never), including ones that do not match this repository today;
+#   2. the template jobs that do match it (semgrep-sast, secret_detection, gemnasium-python-dependency_scanning,
+#      container_scanning) also have explicit rules below. tests/test_ci_rules.py evaluates both.
+.no_scanners: &no_scanners
+  SAST_DISABLED: "true"
+  SECRET_DETECTION_DISABLED: "true"
+  DEPENDENCY_SCANNING_DISABLED: "true"
+  CONTAINER_SCANNING_DISABLED: "true"
+
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS
       when: never
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    # scheduled pipelines run on main too, so this must come before the main rule
     - if: $CI_PIPELINE_SOURCE == "schedule"
+      variables: *no_scanners
+    # a hand-started rollback with the ROLLBACK_TO variable (Maintainer role) on main
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $ROLLBACK_TO
+      variables: *no_scanners
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     # rollback pipelines (scripts/incident.py, scripts/rollback_ref.py): only the explicit start, never the
     # push pipeline that creating the branch may cause
     - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/ && $CI_PIPELINE_SOURCE == "push"
       when: never
     - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
+      variables: *no_scanners
     - if: $CI_PIPELINE_SOURCE == "trigger"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "api"
@@ -181,8 +200,9 @@ review-handoff:
 sast:
   stage: secure
 
-# The template runs semgrep on every branch pipeline, including the scheduled monitor and rollback
-# pipelines, where nothing changed: ~31 s of runner time per run for no new information (docs/SCI.md).
+# The templates run their analyzers on every branch pipeline (`$CI_COMMIT_BRANCH && …`), including the
+# scheduled monitor and rollback/<tag>/… pipelines, where nothing changed: ~31 s (semgrep) and ~54 s (gemnasium)
+# of runner time per run for no new information (docs/SCI.md §4). MR and main pipelines only.
 semgrep-sast:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
@@ -199,6 +219,23 @@ secret_detection:
 
 dependency_scanning:
   stage: secure
+
+# Same conditions as the template (Ultimate feature, a Python manifest in the repository, the global switch),
+# restricted to MR and main pipelines. The template ran it on scheduled pipeline 2945603793 (drill 2026-10-14).
+gemnasium-python-dependency_scanning:
+  rules:
+    - if: $DEPENDENCY_SCANNING_DISABLED == 'true' || $DEPENDENCY_SCANNING_DISABLED == '1'
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $ROLLBACK_TO
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists:
+        - "**/{requirements.txt,requirements.pip,Pipfile,Pipfile.lock,requires.txt,setup.py,poetry.lock,uv.lock}"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $GITLAB_FEATURES =~ /\bdependency_scanning\b/
+      exists:
+        - "**/{requirements.txt,requirements.pip,Pipfile,Pipfile.lock,requires.txt,setup.py,poetry.lock,uv.lock}"
 
 pip-audit:
   stage: secure

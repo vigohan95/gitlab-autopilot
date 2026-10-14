@@ -72,15 +72,30 @@ pipeline where no commit changed.
 
 | cadence | runs / day | runner-minutes / day | runner-minutes / 30 days | gCO2e / day (576 g/kWh) |
 |---|---|---|---|---|
-| `*/15 * * * *`, three jobs (until 2026-10-13) | 96 | **148.8** | 4 464 | 12.7 |
-| `0 */2 * * *`, `monitor` only (now) | 12 | **6.0** | 180 | 0.51 |
+| `*/15 * * * *`, three jobs (history project, until 2026-10-13) | 96 | **148.8** | 4 464 | 12.7 |
+| `0 */2 * * *` as it really ran in the showcase on 2026-10-14: `monitor` 32.1 s + `gemnasium-python-dependency_scanning` 47.6 s ([pipeline 2945631275](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945631275)) | 12 | **15.9** | 477 | 1.36 |
+| `0 */2 * * *`, `monitor` only (since the correction below; the same measured 32.1 s `monitor` job) | 12 | **6.4** | 192 | 0.55 |
 
-**Saved: ≈ 143 runner-minutes a day (96 %)**, or about 4 300 minutes a month — more than ten times the whole
+**Saved: ≈ 142 runner-minutes a day (96 %)**, or about 4 300 minutes a month — more than ten times the whole
 Free-tier allowance (400 min/month), which is exactly why the history project's quota was gone in under three
-days. The change is three lines: `semgrep-sast` and `audit-trail` now carry `when: never` for
-`$CI_PIPELINE_SOURCE == "schedule"` in `.gitlab-ci.yml`, and `scripts/demo.py setup` creates the schedule with
-`MONITOR_CRON = "0 */2 * * *"` (an existing schedule is edited in Build > Pipeline schedules).
-`sci.schedule_minutes_per_day()` reproduces the table.
+days. The change: `semgrep-sast`, `audit-trail` and (since 2026-10-14) `gemnasium-python-dependency_scanning` carry
+`when: never` for `$CI_PIPELINE_SOURCE == "schedule"` in `.gitlab-ci.yml`, the workflow rule for scheduled and
+rollback pipelines sets `SAST_DISABLED`, `SECRET_DETECTION_DISABLED`, `DEPENDENCY_SCANNING_DISABLED` and
+`CONTAINER_SCANNING_DISABLED` so that no other template analyzer can start there either, and `scripts/demo.py setup`
+creates the schedule with `MONITOR_CRON = "0 */2 * * *"` (an existing schedule is edited in Build > Pipeline
+schedules). `sci.schedule_minutes_per_day()` reproduces the table; `tests/test_ci_rules.py` asserts that a
+scheduled pipeline runs exactly `monitor` and `incident`.
+
+**Correction (2026-10-14).** Until that day this section and the README said the 2-hour schedule was monitor-only,
+at 6.0 runner-minutes a day (a 30 s estimate). The live drill showed otherwise. Both scheduled pipelines of the day,
+[2945603793](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945603793)
+(production down: `monitor` 111.1 s, `incident` 35.7 s, `gemnasium-python-dependency_scanning` 54.0 s) and
+2945631275 (healthy), also ran the Dependency Scanning template job. Its template rule matches every branch pipeline,
+and the job only runs where the Ultimate feature is on. The history project, where §4's measurements were taken, is on
+Free, so the job never appeared there; the showcase group is Ultimate, so it did. The real cost of the schedule was
+therefore 15.9 runner-minutes a day, not 6.0. With the job excluded it is 6.4 (12 × the measured 32.1 s `monitor`
+job). That figure is computed from the measured job, not yet read off a post-fix scheduled pipeline. The scanner
+still runs on main pipelines, and now also on merge request pipelines, where a dependency change can actually appear.
 
 Trade-off, stated plainly: detection latency for a production outage rises from ≤ 15 min to ≤ 2 h. For a demo
 service with no users that is the right trade; for a real service you would keep a short cadence and make the

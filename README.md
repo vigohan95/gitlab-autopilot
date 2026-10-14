@@ -300,7 +300,7 @@ Everything is free-tier; no card is needed anywhere.
 pipeline) plays the three scenes — hands-off merge + release, security gate, chaos → incident →
 rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
-[^quota]: Since 2026-10-10 the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the quarter-hourly monitor (which also dragged `semgrep-sast` and `audit-trail` along on every run — about 149 runner-minutes a day; now every 2 h and monitor-only, about 6, see [`docs/SCI.md`](docs/SCI.md)) and the demo scenes. The mirror pushes there with `ci.skip`; new pipelines run in the judged (showcase) project, and the history project's pipelines, releases, environments and incidents stay as evidence.
+[^quota]: Since 2026-10-10 the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the quarter-hourly monitor (which also dragged `semgrep-sast` and `audit-trail` along on every run — about 149 runner-minutes a day; now every 2 h and monitor-only, about 6.4, see [`docs/SCI.md`](docs/SCI.md) §4 — until 2026-10-14 the showcase's schedule also ran `gemnasium-python-dependency_scanning`, about 15.9 a day, which the live drill exposed and which is now excluded) and the demo scenes. The mirror pushes there with `ci.skip`; new pipelines run in the judged (showcase) project, and the history project's pipelines, releases, environments and incidents stay as evidence.
 
 ## Local development
 
