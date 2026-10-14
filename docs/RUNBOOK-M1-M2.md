@@ -140,17 +140,49 @@ query-string form below: `…/status/503?probe=` + `/healthz` → `…/status/50
 
 | when | what you see | collect |
 |---|---|---|
-| +0 | Scheduled pipeline with jobs `monitor` and `incident` only (`semgrep-sast`/`audit-trail` no longer run on schedules). | pipeline URL |
+| +0 | Scheduled pipeline with jobs `monitor` and `incident` only. No scanner runs on a schedule (`.gitlab-ci.yml` workflow rules; `tests/test_ci_rules.py`). On 2026-10-14 `gemnasium-python-dependency_scanning` still ran here too (drill finding 4, fixed since). | pipeline URL |
 | +2 min | **`monitor` red** after 5 attempts × 20 s: the log and `monitor-report.json` show `production` `/healthz→503`, `/version→503`. | `monitor` job URL |
-| +3 min | **`incident` job** runs (`when: on_failure`): opens **Monitor > Incidents** → "Production unhealthy (…)" with the report, labels `autopilot`, `incident`, `env::production`, the line "No earlier release exists; rollback not possible." (the showcase has only `v0.1.2`) and `autopilot: rules=[§6.1, §6.2, §6.3]`. It also tries to clear the chaos switch (nothing to clear — no Render key). https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/incidents | incident URL |
+| +3 min | **`incident` job** runs (`when: on_failure`): opens **Monitor > Incidents** → "Production unhealthy: production (…)" with the report, labels `autopilot`, `incident`, `env::production`, an *Automatic remediation* line (see "The rollback step" below) and `autopilot: rules=[§6.1, §6.2, §6.3]`. It also tries to clear the chaos switch (nothing to clear — no Render key). **Expected in the showcase today:** "**No automatic rollback:** `/version` did not answer, and production's last successful deployment (…, `main` at `<sha>`) is not a release. A human must roll back." plus the same as a note, and no rollback pipeline. https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/incidents | incident URL, `incident` job log (it prints `rollback target: …`) |
 | +3 min | Pipeline **failed** → T4 starts **f4-incident-responder** (triage MONITOR → responder) and T3 starts **f3-security-fixer** (triage MONITOR → ends). | AI > Sessions → both ids |
 | +5–9 min | F4 posts the **RCA note** on the incident with headings Impact / Timeline (UTC) / Root cause / Remediation (automatic) / Follow-ups for humans / Evidence, ending `autopilot: rules=[section 6.1, section 6.2, section 6.3]`, and adds the label `rca::done`. Expected root cause: the production endpoint answers 503 on both probes (not the chaos switch — the note should say "503 from httpbin", i.e. the configured URL is down/misconfigured). The incident **stays open** (§6.3). | RCA note URL |
+
+#### The rollback step (AUTOPILOT §6.2), as `scripts/incident.py` does it now
+
+1. **Which release is deployed.** What production's `/version` reports, if that is a release. Otherwise the release of
+   production's **last successful deployment** (Deployments API, environment `production`, newest finished): a
+   `rollback/<tag>/…` ref gives `<tag>`, a tag ref gives that tag, a commit that is exactly a release's commit gives
+   that release. Anything else (a later push to `main`) names no release, so there is no guess.
+2. **Target** = the newest release older than the deployed one. If the deployed release is unknown or is the oldest
+   release, there is **no target**. The incident description says "**No automatic rollback:** <reason>. A human must
+   roll back." and the same reason is posted as a note. No pipeline starts.
+3. **With a target**, the job creates the branch `rollback/<tag>/incident-<iid>` from the commit the monitor ran on,
+   then starts a pipeline on it with `CI_JOB_TOKEN` and **no pipeline variables**. The incident gets the note
+   "Rollback to `<tag>` started on `rollback/<tag>/incident-<iid>`: <pipeline URL>". That pipeline runs
+   `deploy-staging` → `verify-staging` → `deploy-production` → `rollback-note` + `audit-trail` (no scanners, no
+   build). The deploy jobs build the tag's commit (`scripts/rollback_ref.py`, `scripts/deploy.py`), and in the
+   showcase they are dry runs. `rollback-note` posts "Rollback to `<tag>` deployed to staging and production" on the
+   incident. If the branch or the trigger is refused, the incident gets "Automatic rollback could NOT be started: …
+   A human must roll back."
+4. **A human rollback** (when the incident says so, and you agree a rollback would help): pick the release. Go to
+   **Code > Branches > New branch**, name it `rollback/<tag>/incident-<iid>` (for example `rollback/v0.1.1/incident-4`),
+   and create it from `main`. Creating it starts no pipeline, because the workflow rules skip the push. Then go to
+   **Build > Pipelines > Run pipeline**, choose that branch, add no variables, and click **Run pipeline**.
+
+**What happened on 2026-10-14** (`docs/DRILL-2026-10-14.md`, findings 3 and 5). The rule then was "if `/version` does
+not answer, take the newest release", so Incident #3 named `v0.1.2` as the target. That is the showcase's only
+release, and production was already built on it. The job then started the rollback the old way, as a pipeline on
+`main` with the variable `ROLLBACK_TO=v0.1.2`. GitLab refused it with 400 "Insufficient permissions to set pipeline
+variables", and the incident got "Automatic rollback could NOT be started … A human must roll back." F4's RCA added
+that a rollback to `v0.1.2` would not have changed anything, because the probe URL was the fault. Both are fixed: the
+rollback runs on the branch with no variables, and the target is never the release already deployed. Replayed
+against the drill, the job now picks no target and starts no pipeline (`tests/test_rollback.py`). The branch path
+has not yet run in a live incident.
 
 ### M2.4 Restore (1 min)
 
 1. Settings > CI/CD > Variables → `PULSE_PRODUCTION_URL`: **delete** it (or restore the old value you wrote down).
 2. Pipeline schedules → ▶ Run once more: with no targets the `monitor` job is green ("no targets configured"), which is
-   the honest state of a dry-run production. Leave the schedule **active** (every 2 h, about 6 runner-minutes a day,
+   the honest state of a dry-run production. Leave the schedule **active** (every 2 h, about 6.4 runner-minutes a day,
    `docs/SCI.md`) — it is the Monitor-stage evidence.
 3. Leave the incident open with `rca::done` (policy §6.3: a human closes incidents). If it must be closed for tidiness,
    do it **after** judging.
@@ -163,6 +195,8 @@ Send Claude: the scheduled pipeline URL, the incident URL, the F4 session id, th
 - No F4 session: AI > Triggers — T4 enabled, event *Pipeline events → Failed*, flow `f4-incident-responder`; the
   schedule owner must be you (Take ownership, run again).
 - The monitor is green: the variable did not reach the job (protected flag on? wrong scope?) — fix and run again.
+- The incident says "No automatic rollback": expected in the showcase (only `v0.1.2` exists and production runs on it,
+  see "The rollback step"). It is a finding only if a rollback was due; then roll back by hand (step 4).
 
 ---
 
