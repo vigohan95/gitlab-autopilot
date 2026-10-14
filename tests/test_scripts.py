@@ -231,6 +231,29 @@ def test_new_high_findings_ignores_pre_existing(monkeypatch):
     assert len(new) == 3
 
 
+def test_baseline_falls_back_to_default_branch():
+    """2026-10-14 drill: fix MR into a feature branch whose only pipeline failed before container scanning."""
+    import automerge
+
+    class GL:
+        project = "1"
+
+        def get(self, path, **params):
+            return {"security/pin-fastapi-demo": [], "main": [{"id": 7}]}[params["ref"]]
+
+        def get_all(self, path, **params):
+            img = {"report_type": "container_scanning", "location": {"image": "registry/x:abc123"}}
+            if params["pipeline_id"] == 1:  # fix MR pipeline: 8 base-image CVEs, all pre-existing on main
+                return [{**img, "identifiers": [{"external_id": f"CVE-{i}"}]} for i in range(8)]
+            return [{**img, "identifiers": [{"external_id": f"CVE-{i}"}]} for i in range(8)]  # main
+
+    bases = automerge.baseline_pipelines(GL(), "security/pin-fastapi-demo", "main")
+    assert bases == [("main", 7)]
+    new, total = automerge.new_high_findings(GL(), 1, [i for _, i in bases])
+    assert new == [] and total == 8
+    assert automerge.baseline_pipelines(GL(), "main", "main") == [("main", 7)]
+
+
 def test_finding_key_ignores_image_tag():
     import automerge
 

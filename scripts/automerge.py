@@ -33,16 +33,42 @@ def finding_key(v: dict) -> str:
     return f"{v.get('report_type', '')}:{ident}@{where}"
 
 
-def new_high_findings(gl: GitLab, mr_pipeline_id: int, base_pipeline_id: int | None) -> tuple[list[str], int]:
-    """(keys of High/Critical findings present on the MR pipeline but not on the base pipeline, total on MR)."""
+def new_high_findings(
+    gl: GitLab, mr_pipeline_id: int, base_pipeline_id: int | list[int] | None
+) -> tuple[list[str], int]:
+    """(keys of High/Critical findings present on the MR pipeline but on none of the base pipelines, total on MR).
+
+    ``base_pipeline_id`` may be one id or several: a finding already present on any baseline is not new.
+    """
     params = {"severity": "critical,high", "scope": "all"}
     mr_v = gl.get_all(f"/projects/{gl.project}/vulnerability_findings", pipeline_id=mr_pipeline_id, **params)
+    if base_pipeline_id is None:
+        base_ids: list[int] = []
+    elif isinstance(base_pipeline_id, int):
+        base_ids = [base_pipeline_id]
+    else:
+        base_ids = [i for i in base_pipeline_id if i]
     base_keys: set[str] = set()
-    if base_pipeline_id:
-        base_v = gl.get_all(f"/projects/{gl.project}/vulnerability_findings", pipeline_id=base_pipeline_id, **params)
-        base_keys = {finding_key(v) for v in base_v}
+    for bid in dict.fromkeys(base_ids):
+        base_v = gl.get_all(f"/projects/{gl.project}/vulnerability_findings", pipeline_id=bid, **params)
+        base_keys |= {finding_key(v) for v in base_v}
     new = sorted({finding_key(v) for v in mr_v} - base_keys)
     return new, len(mr_v)
+
+
+def baseline_pipelines(gl: GitLab, target_branch: str, default_branch: str) -> list[tuple[str, int]]:
+    """Latest green pipeline on the target branch and on the default branch.
+
+    Found in the 2026-10-14 security drill: a fix MR targeting a feature branch whose only pipeline had failed
+    at ``pip-audit`` (so container scanning never ran there) had no baseline, and every pre-existing base-image
+    CVE counted as new. Findings already present on the default branch are never new to an MR.
+    """
+    out: list[tuple[str, int]] = []
+    for ref in dict.fromkeys([target_branch, default_branch]):
+        found = gl.get("pipelines", ref=ref, status="success", per_page=1)
+        if found:
+            out.append((ref, found[0]["id"]))
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -82,20 +108,20 @@ def main(argv: list[str] | None = None) -> int:
         mr_pipelines = gl.get(f"merge_requests/{args.mr}/pipelines")
         pipeline_id = mr_pipelines[0]["id"] if mr_pipelines else None
         if pipeline_id:
-            base = gl.get("pipelines", ref=mr["target_branch"], status="success", per_page=1)
-            base_id = base[0]["id"] if base else None
-            new, total = new_high_findings(gl, pipeline_id, base_id)
+            default_branch = os.environ.get("CI_DEFAULT_BRANCH") or "main"
+            bases = baseline_pipelines(gl, mr["target_branch"], default_branch)
+            refs = " + ".join(r for r, _ in bases) or "no green baseline"
+            new, total = new_high_findings(gl, pipeline_id, [i for _, i in bases])
             if new:
                 decision.allowed = False
                 decision.violated.append("§3.3")
                 decision.reasons.append(
-                    f"§3.3 {len(new)} NEW High/Critical findings (absent on {mr['target_branch']}): "
-                    + ", ".join(new[:5])
+                    f"§3.3 {len(new)} NEW High/Critical findings (absent on {refs}): " + ", ".join(new[:5])
                 )
             else:
                 decision.satisfied.append("§3.3")
                 decision.reasons.append(
-                    f"§3.3 no new High/Critical findings ({total} pre-existing, tracked on {mr['target_branch']})"
+                    f"§3.3 no new High/Critical findings ({total} pre-existing, tracked on {refs})"
                     if total
                     else "§3.3 no High/Critical findings"
                 )
