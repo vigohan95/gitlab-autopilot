@@ -117,6 +117,21 @@ default:
 .rules_mr: &rules_mr
   - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 
+# Registry- and network-bound jobs retry infrastructure failures (GitLab's own failure classes; never
+# script_failure, so a red test or a real scanner error is not hidden). A registry HTTP 5xx inside the script is a
+# script_failure to GitLab, so build-image also wraps each docker call in scripts/registry_retry.sh, which retries
+# only on registry 5xx / "unexpected status" / TLS and network timeouts (drill 2026-10-14, run 5: MR pipeline
+# 2945797046 failed at build-image on "unexpected status from HEAD request ... 500 Internal Server Error").
+.infra_retry: &infra_retry
+  max: 2
+  when:
+    - runner_system_failure
+    - stuck_or_timeout_failure
+    - api_failure
+    - unknown_failure
+    - scheduler_failure
+    - data_integrity_failure
+
 .python:
   before_script:
     - python --version
@@ -261,21 +276,23 @@ build-image:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - sh scripts/registry_retry.sh sh -c 'printf %s "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"'
   script:
-    - docker build --build-arg "PULSE_VERSION=${VERSION:-$CI_COMMIT_SHORT_SHA}" -t "$IMAGE:$CI_COMMIT_SHA" -t "$IMAGE:$CI_COMMIT_REF_SLUG" .
-    - docker push "$IMAGE:$CI_COMMIT_SHA"
-    - docker push "$IMAGE:$CI_COMMIT_REF_SLUG"
+    - sh scripts/registry_retry.sh docker build --build-arg "PULSE_VERSION=${VERSION:-$CI_COMMIT_SHORT_SHA}" -t "$IMAGE:$CI_COMMIT_SHA" -t "$IMAGE:$CI_COMMIT_REF_SLUG" .
+    - sh scripts/registry_retry.sh docker push "$IMAGE:$CI_COMMIT_SHA"
+    - sh scripts/registry_retry.sh docker push "$IMAGE:$CI_COMMIT_REF_SLUG"
     - |
       if [ "$CI_COMMIT_BRANCH" = "$CI_DEFAULT_BRANCH" ]; then
-        docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:latest" && docker push "$IMAGE:latest"
-        if [ -n "$VERSION" ]; then docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:v$VERSION" && docker push "$IMAGE:v$VERSION"; fi
+        docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:latest" && sh scripts/registry_retry.sh docker push "$IMAGE:latest"
+        if [ -n "$VERSION" ]; then docker tag "$IMAGE:$CI_COMMIT_SHA" "$IMAGE:v$VERSION" && sh scripts/registry_retry.sh docker push "$IMAGE:v$VERSION"; fi
       fi
+  retry: *infra_retry
   rules: *rules_app
 
 container_scanning:
   stage: package
   needs: [build-image]
+  retry: *infra_retry
   rules: *rules_app
 
 build-wheel:
@@ -297,6 +314,7 @@ build-wheel:
     paths:
       - dist/
     expire_in: 1 week
+  retry: *infra_retry
   rules: *rules_app
 
 # ====================================================================== release

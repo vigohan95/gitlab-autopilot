@@ -9,7 +9,10 @@ The evaluator covers the subset of GitLab's rules syntax this file uses (`==`, `
 parentheses, variable presence, `exists` globs, `when`, workflow `variables`); it is not a general one.
 """
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -203,3 +206,89 @@ def test_gemnasium_keeps_the_template_conditions():
     assert "gemnasium-python-dependency_scanning" not in jobs
     _, jobs = pipeline(**MAIN, DEPENDENCY_SCANNING_DISABLED="true")
     assert "gemnasium-python-dependency_scanning" not in jobs
+
+
+# --------------------------------------------------------------- transient infrastructure failures (run 5) --
+# 2026-10-14, run 5: MR pipeline 2945797046 failed at build-image on "unexpected status from HEAD request to
+# <registry>: 500 Internal Server Error" and nothing retried it. Registry- and network-bound jobs now retry
+# GitLab's infrastructure failure classes, and build-image wraps every docker call in scripts/registry_retry.sh.
+INFRA_FAILURES = {
+    "runner_system_failure",
+    "stuck_or_timeout_failure",
+    "api_failure",
+    "unknown_failure",
+    "scheduler_failure",
+    "data_integrity_failure",
+}
+RETRY_SCRIPT = ROOT / "scripts" / "registry_retry.sh"
+
+
+@pytest.mark.parametrize("name", ["build-image", "container_scanning", "build-wheel"])
+def test_registry_bound_jobs_retry_infrastructure_failures_only(name):
+    retry = CI[name]["retry"]
+    assert retry["max"] == 2
+    assert set(retry["when"]) == INFRA_FAILURES  # never script_failure: a red test or scanner error is not hidden
+
+
+def test_every_docker_registry_call_in_build_image_goes_through_the_retry_wrapper():
+    job = CI["build-image"]
+    lines = [line for part in job["before_script"] + job["script"] for line in part.splitlines()]
+    calls = [(line, m.start()) for line in lines for m in re.finditer(r"\bdocker (?:login|build|push)\b", line)]
+    assert len(calls) == 6  # login, build, push sha, push ref slug, push latest, push v<version>
+    assert not [line for line, at in calls if "registry_retry.sh" not in line[:at]]
+
+
+def _run_retry(tmp_path, body: str, attempts: int = 3) -> tuple[int, str, int]:
+    """Run registry_retry.sh around a fake command; returns (exit code, stderr, how often the command ran)."""
+    sh = shutil.which("sh")
+    if sh is None:
+        pytest.skip("no POSIX sh")
+    fake = tmp_path / "fake.sh"
+    fake.write_text(
+        'n=$(cat "$COUNTER" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$COUNTER"\n' + body,
+        encoding="utf-8",
+        newline="\n",
+    )
+    counter = tmp_path / "count"
+    env = {
+        **os.environ,
+        "COUNTER": counter.as_posix(),
+        "REGISTRY_RETRY_BACKOFF": "0",
+        "REGISTRY_RETRY_ATTEMPTS": str(attempts),
+    }
+    proc = subprocess.run(  # noqa: S603 - fixed local script and a fake command written by the test
+        [sh, RETRY_SCRIPT.as_posix(), sh, fake.as_posix()], capture_output=True, text=True, env=env, timeout=60
+    )
+    return proc.returncode, proc.stderr, int(counter.read_text().strip())
+
+
+REGISTRY_500 = (
+    'echo "error parsing HTTP 500 response body: unexpected status from HEAD request to '
+    'https://registry.gitlab.com/v2/x/blobs/sha256:ab: 500 Internal Server Error"; exit 1'
+)
+
+
+def test_retry_wrapper_retries_the_run5_registry_500_and_then_succeeds(tmp_path):
+    rc, err, runs = _run_retry(tmp_path, f'if [ "$n" -lt 2 ]; then {REGISTRY_500}; fi; echo pushed')
+    assert (rc, runs) == (0, 2)
+    assert "attempt 1/3 failed with a transient registry/network error" in err
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["net/http: TLS handshake timeout", "dial tcp 1.2.3.4:443: i/o timeout", "received unexpected HTTP status: 503"],
+)
+def test_retry_wrapper_gives_up_after_three_transient_failures(tmp_path, message):
+    rc, err, runs = _run_retry(tmp_path, f'echo "{message}"; exit 7')
+    assert (rc, runs) == (7, 3)
+    assert "on all 3 attempts" in err
+
+
+def test_retry_wrapper_does_not_retry_a_real_failure(tmp_path):
+    rc, _, runs = _run_retry(tmp_path, 'echo "denied: requested access to the resource is denied"; exit 5')
+    assert (rc, runs) == (5, 1)
+
+
+def test_retry_wrapper_passes_success_through_once(tmp_path):
+    rc, _, runs = _run_retry(tmp_path, "echo pushed")
+    assert (rc, runs) == (0, 1)
