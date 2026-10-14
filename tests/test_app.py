@@ -62,6 +62,38 @@ def test_summary_and_metrics(client):
     assert 'pulse_site_latency_p50_ms{site="err"}' not in text
 
 
+def test_summary_includes_uptime_24h_and_keeps_existing_keys(client):
+    client.post("/api/check")
+    client.post("/api/sites", json={"name": "empty", "url": "https://empty.test/"})
+    summary = {r["name"]: r for r in client.get("/api/summary").json()}
+    assert summary["ok"]["uptime_24h_pct"] == 100.0
+    assert summary["err"]["uptime_24h_pct"] == 0.0
+    assert summary["empty"]["uptime_24h_pct"] is None
+    existing = {
+        "site_id",
+        "name",
+        "url",
+        "checks",
+        "uptime_pct",
+        "mean_latency_ms",
+        "p50_latency_ms",
+        "p95_latency_ms",
+        "last_ok",
+        "last_ts",
+    }
+    for row in summary.values():
+        assert existing <= set(row)
+
+
+def test_status_page_shows_uptime_24h(client):
+    client.post("/api/check")
+    client.post("/api/check")
+    page = client.get("/")
+    assert "<th>uptime 24h</th>" in page.text
+    assert "<td>100.0%</td>" in page.text
+    assert "<td>0.0%</td>" in page.text
+
+
 def test_status_page_html(client):
     client.post("/api/check")
     page = client.get("/")

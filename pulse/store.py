@@ -7,7 +7,7 @@ import sqlite3
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 SCHEMA = """
@@ -132,8 +132,20 @@ class Store:
             ).fetchall()
         return [_check(r) for r in rows]
 
+    def uptime_since(self, site_id: int, cutoff: str) -> float | None:
+        """Uptime percentage of checks with ``ts >= cutoff``; ``None`` when there are none."""
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS total, SUM(ok) AS up FROM checks WHERE site_id = ? AND ts >= ?",
+            (site_id, cutoff),
+        ).fetchone()
+        total = row["total"]
+        if not total:
+            return None
+        return round(100.0 * (row["up"] or 0) / total, 1)
+
     def summary(self, window: int = 100) -> list[dict]:
-        """Per-site uptime and mean latency over the last ``window`` checks."""
+        """Per-site uptime and mean latency over the last ``window`` checks, plus 24h uptime."""
+        cutoff = (datetime.now(UTC) - timedelta(hours=24)).isoformat(timespec="seconds")
         out: list[dict] = []
         for site in self.list_sites():
             checks = self.recent_checks(site.id, limit=window)
@@ -150,6 +162,7 @@ class Store:
                     "url": site.url,
                     "checks": total,
                     "uptime_pct": round(100.0 * up / total, 2) if total else None,
+                    "uptime_24h_pct": self.uptime_since(site.id, cutoff),
                     "mean_latency_ms": round(sum(latencies) / len(latencies), 1) if latencies else None,
                     "p50_latency_ms": round(p50, 1) if p50 is not None else None,
                     "p95_latency_ms": round(p95, 1) if p95 is not None else None,

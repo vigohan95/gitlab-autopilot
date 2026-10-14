@@ -1,4 +1,10 @@
+from datetime import UTC, datetime, timedelta
+
 from pulse.store import Store
+
+
+def _ago(hours: float) -> str:
+    return (datetime.now(UTC) - timedelta(hours=hours)).isoformat(timespec="seconds")
 
 
 def test_add_and_list_sites():
@@ -44,6 +50,49 @@ def test_summary_uptime_and_latency():
     assert rows["a"]["last_ok"] is True
     assert rows["empty"]["checks"] == 0
     assert rows["empty"]["uptime_pct"] is None
+
+
+def test_uptime_24h_mixed_checks():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    for ok in (True, True, True, False):
+        s.record_check(a.id, ok, 200 if ok else None, 10.0 if ok else None)
+    assert s.summary()[0]["uptime_24h_pct"] == 75.0
+
+
+def test_uptime_24h_excludes_old_checks():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    for ok in (True, True, True, False):
+        s.record_check(a.id, ok, 200 if ok else None, 10.0 if ok else None)
+    s.record_check(a.id, False, None, None, "ConnectError", ts=_ago(25))
+    row = s.summary()[0]
+    assert row["uptime_24h_pct"] == 75.0
+    assert row["checks"] == 5
+
+
+def test_uptime_24h_rounding():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    for ok in (True, True, False):
+        s.record_check(a.id, ok, 200 if ok else None, 10.0 if ok else None)
+    assert s.summary()[0]["uptime_24h_pct"] == 66.7
+
+
+def test_uptime_24h_none_without_checks():
+    s = Store()
+    s.add_site("empty", "https://e.test/")
+    assert s.summary()[0]["uptime_24h_pct"] is None
+
+
+def test_uptime_24h_none_when_only_old_checks():
+    s = Store()
+    a = s.add_site("a", "https://a.test/")
+    s.record_check(a.id, True, 200, 10.0, ts=_ago(30))
+    s.record_check(a.id, False, None, None, "ConnectError", ts=_ago(26))
+    row = s.summary()[0]
+    assert row["uptime_24h_pct"] is None
+    assert row["uptime_pct"] == 50.0
 
 
 def test_summary_percentiles():
