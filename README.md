@@ -9,7 +9,7 @@ story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 
 **Live drill, 2026-10-14 — failures included** (judged project; the full timeline is in
 [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md)). We ran two scenarios on purpose so that the
-Reviewer, Security Fixer and Incident Responder flows had real work to do:
+Reviewer, Security Fixer and Incident Responder flows had real work to do, then filed two issues after the fixes:
 
 - **Security loop.** A human opened [MR !2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/2) pinning `fastapi==0.125.0`. F2 answered
   HUMAN REQUIRED (§2.2, §3.3). `pip-audit` failed [pipeline 2945456466](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945456466) (starlette,
@@ -19,23 +19,41 @@ Reviewer, Security Fixer and Incident Responder flows had real work to do:
 - **Incident loop.** The monitor schedule, pointed at an always-503 URL, failed. The `incident` job opened
   [Incident #3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3). **F4 posted the [RCA](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3#note_4010170073)** about 80 s later. It
   named the real cause, a misconfigured probe target, and said a rollback would not help.
-- **What broke, fixed the same day:**
+- **Run 4, hands-off, after the fixes.** A human filed [issue #4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/work_items/4) at 07:29Z, and
+  [MR !4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4) merged at 07:39Z with no human touch. GitLab Duo Code Review had left a
+  [valid finding](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4#note_4010364289) on the tests two minutes earlier, and the gate merged past it.
+- **Run 5, the follow-up, two human interventions.** [Issue #5](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/work_items/5) (07:53Z) asked for
+  that missing test. F1 opened [MR !5](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/5) (test-only, +30 lines), F2 approved it, and Code
+  Review found nothing left to comment on. Then a container-registry HTTP 500 failed `build-image`, and the job sat
+  failed until a human retried it 75 minutes later. Next, `auto-merge` held the MR on a false positive (finding 7).
+  After the fix and a human rebase, !5 merged at 09:28Z and reached production at 09:34Z. This run was not zero-touch.
+- **What broke, and the fix commit for each** (details and regression tests in the drill log):
   1. The §3.3 "new findings" baseline was empty for a fix MR into a feature branch, so the gate held a correct
      fix (`abee55e`).
   2. A `policy-check` label could override the reviewer agent's HUMAN REQUIRED verdict (`838637f`).
   3. **The automatic rollback was refused.** It needed pipeline variables, which our Developer role may not set.
-     It now runs on a `rollback/<tag>/incident-<iid>` branch with no variables (`5f2d251`); this is tested but
-     not yet run in a live incident.
-  4. **Run 4, hands-off, after the fixes:** a human filed [issue #4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/work_items/4) at 07:29Z and
-     [MR !4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4) merged at 07:39Z with no human touch. But GitLab Duo Code Review had left a
-     [valid finding](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4#note_4010364289) on the tests two minutes earlier, and the gate merged
-     past it. New **AUTOPILOT §3.7**: unresolved review threads hold the merge until someone resolves them.
-  5. **The reviewer verdict is not an MR approval here.** `review-approve`'s approve call answers 401 in this
-     project (likely: the token's user is recorded as the MR author, and authors may not approve), so §3.2 is
-     decided by F2's newest signed verdict note. We had claimed otherwise; that claim is corrected everywhere.
+     It now runs on a `rollback/<tag>/incident-<iid>` branch with no variables (`5f2d251`). This is tested, but
+     it has not yet run in a live incident.
+  4. The "monitor-only" schedule also ran a dependency scanner; the scanners now run on MR and `main` pipelines
+     only (`914c354`).
+  5. The rollback target could be the release already running. It is now the release below the deployed one, or
+     a human if nothing names the deployed release (`82614ff`).
+  6. Code Review findings were advisory (run 4). New **AUTOPILOT §3.7**: unresolved review threads hold the
+     merge (`6339d18`).
+  7. **Two fixes interacted (run 5).** With fix 4 in place, the newest green `main` pipeline was a scanner-free
+     schedule run, so fix 1's baseline had zero findings and pre-existing ones looked new. The baseline now
+     skips pipelines that never run the scanners (`f3b096e`).
+  8. **A transient registry 500 was not retried (run 5).** Registry-bound jobs now retry GitLab's infrastructure
+     failure classes, and every `docker login/build/push` goes through a retry wrapper that retries only registry
+     5xx, "unexpected status" and TLS or network timeouts (`3c85877`). This is tested, but it has not yet met a
+     live registry error.
 
-  The incident also woke F1, because every new work item fires its trigger. F1 changed nothing. It now skips
-  incidents as its first step, which takes effect once the registered flow is re-pasted in AI > Flows.
+  Two observations. First, **the reviewer verdict is not an MR approval here.** `review-approve`'s approve call
+  answers 401 in this project (likely because the token's user is recorded as the MR author, and authors may not
+  approve), so §3.2 is decided by F2's newest signed verdict note. We had claimed otherwise; that claim is now
+  corrected everywhere. Second, the incident also woke F1, because every new work item fires its trigger. F1
+  changed nothing. It now skips incidents as its first step, which takes effect once the registered flow is
+  re-pasted in AI > Flows.
 
 > **Play it yourself — one click each, nothing to install.**
 >
@@ -89,10 +107,11 @@ the hackathon project, and **all five custom flows have run for real**:
 - **2026-10-10 (row 0 of the judges' table):** F1 Planner + Developer
   (session 9286698), Code Review (session 9286720) and F5 Closer (workflow
   pipeline 2933596153).
-- **2026-10-14 (rows 0b, 0c and 0d):** F2 Reviewer (session 9426174, HUMAN REQUIRED
+- **2026-10-14 (rows 0b–0e):** F2 Reviewer (session 9426174, HUMAN REQUIRED
   on !2; session 9426628, APPROVED on !3), F3 Security Fixer (opened fix MR !3)
   and F4 Incident Responder (the RCA on Incident #3); F1 and F2 again on
-  issue #4 / MR !4, hands-off (run 4).
+  issue #4 / MR !4, hands-off (run 4), and on issue #5 / MR !5 (run 5, two
+  human interventions; row 0e).
 
 The `Merge request created` trigger does not fire for a *flow-created* MR,
 because triggers need a human actor. The `review-handoff` CI job therefore
@@ -206,6 +225,7 @@ Everything below is a page in this project; nothing needs to be run locally.
 | 0b | [MR !2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/2) · [MR !3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/3) · [pipeline 2945456466](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945456466) · [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md) | **Security loop, live (2026-10-14).** A human opened !2 pinning `fastapi==0.125.0` with the `autopilot` label. **F2** (session 9426174) answered HUMAN REQUIRED, citing §2.2 and §3.3. `pip-audit` went red (starlette 0.50.0, 10 known vulnerabilities) and `auto-merge` never ran. **F3** (trigger: pipeline failed) read the log and opened fix MR !3 (`fastapi==0.143.0`, labels `autopilot` + `security-fix`); F2 approved it (session 9426628). The gate then held the correct fix: its §3.3 baseline was empty for a feature branch (finding 1, fixed in `abee55e`). A human merged !3 (§3.2), and `auto-merge` merged !2 into `main` at 06:56Z with an empty net diff. Finding 2 (`838637f`): a `policy-check` label could override F2's HUMAN REQUIRED verdict. The verdict is now authoritative. |
 | 0c | [Incident #3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3) · [scheduled pipeline 2945603793](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945603793) · [RCA note](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3#note_4010170073) | **Incident loop, live (2026-10-14).** `PULSE_PRODUCTION_URL` pointed at an always-503 endpoint for a zero-cost outage. The scheduled `monitor` reported DOWN after 5 attempts (07:02:30Z). The `incident` job opened Incident #3 (07:03:04Z). **F4** posted the RCA at 07:04:25Z (Impact, Timeline, Root cause, Remediation): it identified a misconfigured probe target, not a PULSE fault, said a rollback would not help, and added `rca::done`. **The automatic rollback was refused:** "Insufficient permissions to set pipeline variables" (finding 3). It now runs on a `rollback/<tag>/incident-<iid>` branch with no variables (`5f2d251`). This is tested but not yet run in a live incident. The incident also started F1, which made no change; F1 now skips incidents first. |
 | 0d | [issue #4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/work_items/4) · [MR !4](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4) · [main pipeline 2945742313](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945742313) · [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md) (run 4) | **Run 4, hands-off, after the fixes (2026-10-14).** A human filed issue #4 "Add 24h uptime percentage per site to /api/summary and the status page" at 07:29:28Z. **F1** posted the plan (07:31) and opened MR !4 (07:33; `pulse/app.py`, `pulse/store.py` and their tests). **F2**: [APPROVED](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4#note_4010353255) (07:35). `policy-check` allowed; `auto-merge` cited "§3.2 reviewer agent verdict: APPROVED; §3.3 no new High/Critical findings (44 pre-existing…)". **MR !4 merged at 07:39:18Z** (`e9ca9d94`) and closed #4; [`deploy-production`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17163123229) finished at 07:47:46Z. **Lead time: 9 min 50 s to merge, 18 min 18 s to production. Human touches after filing: 0.** (Our own push cancelled the main pipeline at 07:40:38Z and it was retried at 07:42:00Z, which accounts for about 1.5 min; `sync_main.sh` now refuses to push while a main pipeline runs.) Two honest caveats: GitLab Duo Code Review left a [valid finding](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/4#note_4010364289) on `tests/test_app.py` and the gate merged past it — now **AUTOPILOT §3.7** holds the merge while review threads are unresolved; and the `review-approve` call answered 401, so no MR approval exists — §3.2 was decided by F2's signed verdict note. |
+| 0e | [issue #5](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/work_items/5) · [MR !5](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/5) · [main pipeline 2946146803](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2946146803) · [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md) (run 5) | **Run 5, the follow-up to run 4's Code Review finding (2026-10-14).** A human filed issue #5 at 07:53:38Z. **F1** posted the plan (07:55) and opened MR !5 at 07:56:31Z: `tests/test_app.py` only, +30 lines. **F2**: APPROVED (07:59). **GitLab Duo Code Review** "found nothing to comment on" (08:00), so the follow-up settled its own earlier finding. **Human touches after filing: 2.** (1) `build-image` failed at 07:59:50Z on a container-registry "unexpected status … 500 Internal Server Error" ([MR pipeline 2945797046](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945797046)). Nothing retried it, so a human retried the job at 09:15:17Z. Fixed: infrastructure retries plus a registry retry wrapper (finding 8, `3c85877`). (2) At 09:18:38Z `auto-merge` held the MR on "8 NEW High/Critical findings". This was a false positive: there were 0 new findings against main push pipeline 2945783422. The baseline had been the scanner-free 08:08 schedule run (finding 7, `f3b096e`). An MR pipeline runs the gate from the MR's own commit, so a human rebased !5 at 09:21:54Z. The fixed gate passed. **MR !5 merged at 09:28:02Z** (`09a701a`) and closed #5. [`deploy-production`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17166160472) finished at 09:34:08Z. **Lead time: 1 h 34 min 24 s to merge and 1 h 40 min 30 s to production.** Of that, 75 min was the failed job waiting for a human. This run was **not** zero-touch. |
 | 1 | [Pipelines](https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines) → the latest `main` pipeline | 12 stages left to right: `version` → `test` `lint` → `semgrep-sast` `secret_detection` `pip-audit` → `build-image` → `container_scanning` `build-wheel` → `release` → `deploy-staging` → `verify-staging` → `deploy-production` → `journey-card` `audit-trail` → `demo:*` (manual). Every job is green; click any for its log. |
 | 2 | [Releases](https://gitlab.com/hanwg666/gitlab-autopilot/-/releases) · [Container Registry](https://gitlab.com/hanwg666/gitlab-autopilot/container_registry) · [Package Registry](https://gitlab.com/hanwg666/gitlab-autopilot/-/packages) | `v0.1.0`, `v0.1.1` cut by `release-cli` with generated notes and asset links; the image tagged by commit SHA, `latest` and `vX.Y.Z`; the `pulse-monitor` wheel per version. |
 | 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until `RENDER_API_KEY` is present, then live `onrender.com` URLs). |
@@ -324,7 +344,7 @@ rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                              # 139 tests, no network
+python -m pytest -q                              # 152 tests, no network
 ruff check . && ruff format --check .
 PULSE_DB=:memory: PULSE_INTERVAL=0 PULSE_SITES=gitlab=https://gitlab.com/ python -m pulse
 python scripts/check_ci_schema.py                # validates .gitlab-ci.yml against GitLab's schema
