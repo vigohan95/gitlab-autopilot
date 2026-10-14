@@ -254,6 +254,19 @@ def test_baseline_falls_back_to_default_branch():
     assert automerge.baseline_pipelines(GL(), "main", "main") == [("main", 7)]
 
 
+def test_reviewer_gate_respects_agent_verdict():
+    """2026-10-14 drill: policy-check's scoped label must not override the reviewer agent's HUMAN REQUIRED."""
+    import automerge
+
+    lab = "autopilot::approved"
+    assert automerge.reviewer_gate([], "HUMAN-REQUIRED", [lab], lab)[0] is False
+    assert automerge.reviewer_gate([], "UNREADABLE", [lab], lab)[0] is False
+    assert automerge.reviewer_gate([], "APPROVED", [], lab)[0] is True
+    assert automerge.reviewer_gate(["autopilot-bot"], "HUMAN-REQUIRED", [], lab)[0] is True  # a real approval wins
+    assert automerge.reviewer_gate([], None, [lab], lab)[0] is True  # no reviewer agent: label is the record
+    assert automerge.reviewer_gate([], None, [], lab)[0] is False
+
+
 def test_finding_key_ignores_image_tag():
     import automerge
 

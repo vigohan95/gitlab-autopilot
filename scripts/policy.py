@@ -281,9 +281,20 @@ def main(argv: list[str] | None = None) -> int:
             gl.mr_note(args.mr, freeze_note(policy))  # §1.3: one polite note, no label, no other change
             return 3
         gl.mr_note(args.mr, decision.as_markdown())
-        # §3.2: when no reviewer agent is enabled, the policy check is the reviewer of record.
-        label = policy["labels"]["approved"] if decision.allowed else policy["labels"]["needs_human"]
-        gl.add_labels("merge_requests", args.mr, [label])
+        # §3.2: when no reviewer agent is enabled, the policy check is the reviewer of record. The two labels are
+        # scoped (autopilot::), so adding "approved" would silently drop a reviewer agent's "needs-human";
+        # never do that over a reviewer verdict that is not APPROVED (2026-10-14 drill).
+        from review_approve import parse_verdict
+
+        try:
+            verdict, _ = parse_verdict(gl.get_all(f"merge_requests/{args.mr}/notes"))
+        except Exception:  # noqa: BLE001
+            verdict = None
+        if decision.allowed and verdict and verdict != "APPROVED":
+            print(f"policy rules satisfied, but the reviewer agent's verdict is {verdict}; its label stands")
+        else:
+            label = policy["labels"]["approved"] if decision.allowed else policy["labels"]["needs_human"]
+            gl.add_labels("merge_requests", args.mr, [label])
     if decision.frozen:
         return 3
     return 0 if decision.allowed else 2

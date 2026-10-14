@@ -17,6 +17,7 @@ import sys
 
 from gitlab_api import GitLab, warn
 from policy import evaluate_mr, load_policy
+from review_approve import parse_verdict
 
 
 def finding_key(v: dict) -> str:
@@ -71,6 +72,27 @@ def baseline_pipelines(gl: GitLab, target_branch: str, default_branch: str) -> l
     return out
 
 
+def reviewer_gate(
+    approved_by: list[str], verdict: str | None, labels: list[str], approved_label: str
+) -> tuple[bool, str]:
+    """§3.2 decision. A real MR approval or the reviewer agent's newest signed verdict decides; the
+    ``autopilot::approved`` label only counts when no reviewer verdict exists (no reviewer agent enabled).
+
+    Found in the 2026-10-14 drill: policy-check added the scoped label ``autopilot::approved``, which made GitLab
+    drop the reviewer agent's ``autopilot::needs-human``, and the gate then read the label as the reviewer's
+    approval. A deterministic check must never override the reviewer agent's HUMAN REQUIRED.
+    """
+    if approved_by:
+        return True, f"§3.2 approved by: {', '.join(approved_by)}"
+    if verdict == "APPROVED":
+        return True, "§3.2 reviewer agent verdict: APPROVED"
+    if verdict:
+        return False, f"§3.2 reviewer agent verdict: {verdict} (a policy-check label cannot override it)"
+    if approved_label in labels:
+        return True, f"§3.2 no reviewer agent verdict; policy check is the reviewer of record ({approved_label})"
+    return False, "§3.2 no approval from the reviewer agent yet"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--mr", type=int, default=int(os.environ.get("CI_MERGE_REQUEST_IID", "0") or 0))
@@ -93,14 +115,18 @@ def main(argv: list[str] | None = None) -> int:
     mr = gl.get(f"merge_requests/{args.mr}")
     approvals = gl.get(f"merge_requests/{args.mr}/approvals")
     approved_by = [a["user"]["username"] for a in approvals.get("approved_by", [])]
-    reviewer_ok = bool(approved_by) or policy["labels"]["approved"] in mr.get("labels", [])
+    try:
+        verdict, _ = parse_verdict(gl.get_all(f"merge_requests/{args.mr}/notes"))
+    except Exception as exc:  # noqa: BLE001 - unreadable notes must not count as an approval
+        warn(f"could not read reviewer notes ({type(exc).__name__})")
+        verdict = "UNREADABLE"
+    reviewer_ok, reason = reviewer_gate(approved_by, verdict, mr.get("labels", []), policy["labels"]["approved"])
+    decision.reasons.append(reason)
     if reviewer_ok:
         decision.satisfied.append("§3.2")
-        decision.reasons.append(f"§3.2 approved by: {', '.join(approved_by) or policy['labels']['approved']}")
     else:
         decision.allowed = False
         decision.violated.append("§3.2")
-        decision.reasons.append("§3.2 no approval from the reviewer agent yet")
 
     # §3.3: no NEW High/Critical findings — compare the MR pipeline with the latest green pipeline on the target
     # branch, so pre-existing base-image / dependency findings on main do not block every merge request.
