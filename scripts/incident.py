@@ -6,9 +6,17 @@ part of the self-healing loop; the Incident Responder flow then adds the RCA.
 * Incident creation needs ``AUTOPILOT_TOKEN`` (issues API is not reachable with
   CI_JOB_TOKEN). Without it the script still triggers the rollback and warns.
 * Rollback target = newest release tag that is older than the deployed version
-  (§6.2, never roll forward). The rollback is a new pipeline on ``main`` with
-  ``ROLLBACK_TO=<tag>`` started through the pipeline-trigger API with
-  ``CI_JOB_TOKEN``.
+  (§6.2, never roll forward). The rollback is a pipeline on the branch
+  ``rollback/<tag>/incident-<iid>`` (``scripts/rollback_ref.py``), cut from the
+  commit the monitor ran on and started through the pipeline-trigger API with
+  ``CI_JOB_TOKEN`` and **no pipeline variables**: the judged project refuses
+  variables below the Maintainer role (docs/DRILL-2026-10-14.md, finding 3).
+  Without ``AUTOPILOT_TOKEN`` no branch can be created, and the old call
+  (``ROLLBACK_TO=<tag>`` on the default branch) is tried instead.
+* Incidents keep the ``autopilot`` label: it is what the Incident Responder
+  (F4) and the re-use lookup below search for, and it is not what wakes the
+  Planner — T1 fires on *every* new work item; F1 skips incidents itself
+  (AUTOPILOT §1.1).
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ import os
 import sys
 from pathlib import Path
 
+import rollback_ref
 from gitlab_api import GitLab, warn
 
 INCIDENT_LABELS = ["autopilot", "incident", "env::production"]
@@ -74,6 +83,30 @@ def pick_rollback_target(releases: list[dict], deployed_version: str | None) -> 
         return tags[idx + 1] if idx + 1 < len(tags) else None
     # Deployed version is not a release (e.g. a SHA build): roll back to the newest release.
     return tags[0]
+
+
+def start_rollback(
+    gl: GitLab, tag: str, incident_iid: int | None, from_ref: str, pipeline_id: str | int | None
+) -> tuple[dict, str]:
+    """Start the rollback pipeline for ``tag``; returns (pipeline, ref it runs on). Raises on API errors.
+
+    Needs no pipeline variables (finding 3 of the 2026-10-14 drill): the target and the incident are in the
+    branch name, the branch is cut from ``from_ref`` so the current CI configuration runs, and the deploy jobs
+    build the release tag's commit (``scripts/deploy.py --ref``).
+    """
+    if not gl.can_write:
+        # Creating a branch needs AUTOPILOT_TOKEN; the job token can only trigger. Last resort: the variable call.
+        return gl.trigger_pipeline(from_ref, {"ROLLBACK_TO": tag}), from_ref
+    branch = rollback_ref.branch_name(tag, incident_iid, pipeline_id)
+    try:
+        gl.post("repository/branches", json={"branch": branch, "ref": from_ref})
+        print(f"rollback branch {branch} created from {from_ref}")
+    except Exception as exc:  # noqa: BLE001
+        resp = getattr(exc, "response", None)
+        if resp is None or resp.status_code != 400 or "already exists" not in resp.text:
+            raise
+        print(f"rollback branch {branch} already exists (incident re-used); starting a new pipeline on it")
+    return gl.trigger_pipeline(branch, {}), branch
 
 
 def build_description(report: dict, failed: list[dict], rollback_to: str | None, pipeline_url: str) -> str:
@@ -162,13 +195,14 @@ def main(argv: list[str] | None = None) -> int:
         warn("AUTOPILOT_TOKEN not set: incident issue not created (rollback still triggered)")
 
     pipe: dict = {}
+    rollback_on = ""
     if prod and rollback_to and not args.no_rollback:
-        variables = {"ROLLBACK_TO": rollback_to}
-        if incident_iid:
-            variables["INCIDENT_IID"] = str(incident_iid)
         try:
-            pipe = gl.trigger_pipeline(args.ref, variables)
-            print(f"rollback pipeline started: {pipe.get('web_url')} (ROLLBACK_TO={rollback_to})")
+            from_ref = os.environ.get("CI_COMMIT_SHA") or args.ref
+            pipe, rollback_on = start_rollback(
+                gl, rollback_to, incident_iid, from_ref, os.environ.get("CI_PIPELINE_ID")
+            )
+            print(f"rollback pipeline started: {pipe.get('web_url')} (ref {rollback_on}, target {rollback_to})")
         except Exception as exc:  # noqa: BLE001
             body = getattr(getattr(exc, "response", None), "text", "")[:300]
             warn(f"rollback trigger failed: {exc} {body}")
@@ -186,10 +220,11 @@ def main(argv: list[str] | None = None) -> int:
             )
             gl.issue_note(
                 incident_iid,
-                f"Rollback to `{rollback_to}` started: {pipe.get('web_url')}{extra}\n\nautopilot: rules=[§6.2, §7.1]",
+                f"Rollback to `{rollback_to}` started on `{rollback_on}`: {pipe.get('web_url')}{extra}"
+                "\n\nautopilot: rules=[§6.2, §7.1]",
             )
     with open("incident.env", "w", encoding="utf-8") as fh:
-        fh.write(f"INCIDENT_IID={incident_iid or ''}\nROLLBACK_TO={rollback_to or ''}\n")
+        fh.write(f"INCIDENT_IID={incident_iid or ''}\nROLLBACK_TO={rollback_to or ''}\nROLLBACK_REF={rollback_on}\n")
     return 0
 
 

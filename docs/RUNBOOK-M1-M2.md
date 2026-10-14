@@ -23,10 +23,10 @@ URL: https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/show
 1. **Variables** section → expand. Confirm `AUTOPILOT_TOKEN` exists (masked, **not** protected). It is what `policy-check`,
    `review-approve`, `auto-merge`, `incident` and the journey card write with. If it is missing, nothing in this runbook
    can post notes or merge — stop and say so.
-2. Same section, at the top: **Minimum role to use pipeline variables** → `Developer` (M2's `incident` job starts a
-   rollback pipeline with a `ROLLBACK_TO` variable; without this setting the trigger call returns 400
-   "Insufficient permissions to set pipeline variables". In the showcase there is only one release today, so no rollback
-   will be attempted — set it anyway so the path is open.)
+2. ~~Minimum role to use pipeline variables → Developer~~ — **no longer needed.** The 2026-10-14 drill showed the
+   rollback trigger refused with 400 "Insufficient permissions to set pipeline variables" (and a Developer cannot change
+   that setting). Since then `incident.py` starts the rollback on the branch `rollback/<tag>/incident-<iid>` with no
+   variables (`scripts/rollback_ref.py`, AUTOPILOT §6.2; `docs/DRILL-2026-10-14.md`, finding 3).
 3. Optional but recommended (M3): add variable `AUTOPILOT_F2_CONSUMER_ID` = the numeric id of the `f2-reviewer`
    flow's consumer in this project. Find it signed in at https://gitlab.com/-/graphql-explorer with
 

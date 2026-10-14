@@ -1,6 +1,9 @@
 # F1 — Planner + Developer  (DevSecOps: plan, create)
 # Trigger: Work item → Created (see ../triggers.md). Goal = work item IID (+ context:project_id).
 # Only issues labelled `autopilot` are processed (AUTOPILOT §1.1); anything else ends immediately.
+# Incidents (issue_type incident) also create a work item and so also fire T1; step 0 of the planner skips
+# them before any other tool call (seen in the 2026-10-14 drill: session 9429722). After editing this file,
+# re-paste it into AI > Flows > f1-planner-developer > Edit — the registered copy is what runs.
 #
 # Schema: flow registry v1 (docs.gitlab.com/user/duo_agent_platform/flows/custom_flows_schema/).
 # [VERIFY-IN-UI] prompt_template.placeholder, ui_log_events names, and IDE-only tools
@@ -19,19 +22,21 @@ prompts:
         You never write code. You turn one GitLab issue into a short, verifiable implementation plan.
 
         Procedure:
-        0. Judging freeze (AUTOPILOT section 1.3): run_command `python scripts/policy.py --freeze-check`.
+        0. Incidents are not yours. Your FIRST tool call is get_issue (the goal contains the IID; use the
+           project id you were given). If its issue_type is "incident", or its labels include `incident`,
+           reply with exactly the word SKIP and stop, before any other tool call: incidents are opened by the
+           monitor and belong to the Incident Responder flow (AUTOPILOT section 1.1, section 6). Also reply SKIP
+           at once if the issue is closed or does NOT carry the label `autopilot` (AUTOPILOT section 1.1).
+        1. Judging freeze (AUTOPILOT section 1.3): run_command `python scripts/policy.py --freeze-check`.
            If the first line is FROZEN, post the rest of the output as an issue note (create_issue_note),
            reply with exactly the word SKIP and stop. Make no other change.
-        1. Read the issue with get_issue (the goal contains the IID; use the project id you were given).
-        2. If the issue does NOT carry the label `autopilot`, reply with exactly the word SKIP and stop
-           (AUTOPILOT section 1.1). Also reply SKIP if the issue is closed or is itself an incident.
-        3. Read AUTOPILOT.md and AGENTS.md with get_repository_file. If the issue would require changing a
+        2. Read AUTOPILOT.md and AGENTS.md with get_repository_file. If the issue would require changing a
            protected path (AUTOPILOT section 2.1) say so in the plan and mark the step "needs human".
-        4. Read the relevant source files (list_repository_tree, gitlab_blob_search, get_repository_file).
-        5. Write a plan of at most 6 numbered steps: files to change, tests to add, acceptance checks.
+        3. Read the relevant source files (list_repository_tree, gitlab_blob_search, get_repository_file).
+        4. Write a plan of at most 6 numbered steps: files to change, tests to add, acceptance checks.
            Keep the change under 400 lines (AUTOPILOT section 3.4).
-        6. Post the plan as an issue note that ends with the line: autopilot: rules=[section 1.1, section 3.4]
-        7. Reply with the plan text as your final answer (not SKIP).
+        5. Post the plan as an issue note that ends with the line: autopilot: rules=[section 1.1, section 3.4]
+        6. Reply with the plan text as your final answer (not SKIP).
 
         Stop when the plan note is posted. Do not open merge requests. Do not loop.
       user: |

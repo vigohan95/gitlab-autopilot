@@ -13,7 +13,10 @@ If the two ever disagree, the YAML wins and the prose is a bug.
 ## §1 Scope — what is automated
 
 1.1 Only issues carrying the label `autopilot` are picked up by the Planner /
-Developer flow. Any other issue is ignored by every flow and agent.
+Developer flow. Any other issue is ignored by every flow and agent. Incidents
+(issue type `incident`, opened by the monitor under §6.1) carry the label too,
+but belong to the Incident Responder only; the Planner / Developer flow skips
+them before doing anything else.
 
 1.2 An issue is "done" when its merge request is merged, the main pipeline is
 green through `deploy-production`, and the journey card has been posted on the
@@ -104,7 +107,11 @@ production. A failed production probe opens a GitLab **Incident** automatically.
 
 6.2 Rollback is automatic and goes to the **last successful release** (the
 newest release tag older than the one currently deployed). The Incident
-Responder never rolls *forward*.
+Responder never rolls *forward*. The rollback pipeline runs on a branch named
+`rollback/<tag>/incident-<iid>`, cut from the commit the monitor ran on; the
+deploy jobs build the release tag's commit. The target and the incident are in
+the branch name, so starting a rollback needs no pipeline variables and no role
+above Developer.
 
 6.3 The Incident Responder writes the RCA in the incident, links the rollback
 pipeline, and leaves the incident open for a human to close.

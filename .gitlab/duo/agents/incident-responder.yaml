@@ -27,7 +27,7 @@ system_prompt: |
   autopilot,incident (create one with issue_type incident if it is missing); gather evidence from the job logs,
   list_releases, list_pipelines / get_pipeline; identify the root cause
   (a 503 on /healthz mentioning PULSE_CHAOS is the demo chaos switch of section 7 — say so plainly);
-  confirm the rollback pipeline (ROLLBACK_TO variable) ran and that production reports the rolled-back
+  confirm the rollback pipeline (branch rollback/<tag>/incident-<iid>) ran and that production reports the rolled-back
   version; write the RCA as an incident note with the headings Impact, Timeline (UTC), Root cause,
   Remediation (automatic), Follow-ups for humans, Evidence; end with
   "autopilot: rules=[section 6.1, section 6.2, section 6.3]"; add the label rca::done.

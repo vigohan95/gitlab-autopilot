@@ -31,6 +31,11 @@ workflow:
       when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $CI_PIPELINE_SOURCE == "schedule"
+    # rollback pipelines (scripts/incident.py, scripts/rollback_ref.py): only the explicit start, never the
+    # push pipeline that creating the branch may cause
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/ && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
     - if: $CI_PIPELINE_SOURCE == "trigger"
     - if: $CI_PIPELINE_SOURCE == "web"
     - if: $CI_PIPELINE_SOURCE == "api"
@@ -57,7 +62,9 @@ variables:
   PULSE_PRODUCTION_URL: ""
   HF_STAGING_SPACE: ""
   HF_PRODUCTION_SPACE: ""
-  # rollback pipelines are started by scripts/incident.py with ROLLBACK_TO=<tag>
+  # Rollback pipelines run on the branch rollback/<tag>/incident-<iid> that scripts/incident.py creates; the
+  # tag and the incident come from the branch name (scripts/rollback_ref.py), so no pipeline variables are
+  # needed (the judged project refuses them below Maintainer). A ROLLBACK_TO variable set by hand still works.
   ROLLBACK_TO: ""
   INCIDENT_IID: ""
 
@@ -85,6 +92,7 @@ default:
   - if: $CI_PIPELINE_SOURCE == "schedule"
     when: never
   - if: $ROLLBACK_TO
+  - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
   - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
 .rules_mr: &rules_mr
@@ -280,6 +288,7 @@ release:
   extends: .python
   before_script:
     - pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+    - eval "$(python scripts/rollback_ref.py)"   # on rollback/<tag>/incident-<iid>: exports ROLLBACK_TO, INCIDENT_IID
     - |
       if [ -n "$ROLLBACK_TO" ]; then
         echo "ROLLBACK to $ROLLBACK_TO (AUTOPILOT §6.2)"
@@ -452,15 +461,17 @@ rollback-note:
       import os, sys
       sys.path.insert(0, "scripts")
       from gitlab_api import GitLab
-      gl = GitLab(); iid = os.environ.get("INCIDENT_IID")
+      from rollback_ref import current
+      gl = GitLab(); tag, iid = current()   # explicit variables, else the rollback/<tag>/incident-<iid> branch
       if iid and gl.can_write:
-          gl.issue_note(int(iid), f"Rollback to `{os.environ['ROLLBACK_TO']}` deployed to staging and production: {os.environ['CI_PIPELINE_URL']}\n\nautopilot: rules=[§5.2, §6.2]")
+          gl.issue_note(int(iid), f"Rollback to `{tag}` deployed to staging and production: {os.environ['CI_PIPELINE_URL']}\n\nautopilot: rules=[§5.2, §6.2]")
           print("incident updated")
       else:
           print("no incident to update")
       PY
   rules:
     - if: $ROLLBACK_TO
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
 
 audit-trail:
   stage: govern
@@ -486,6 +497,7 @@ audit-trail:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
     - if: $ROLLBACK_TO
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
 
 # ========================================================================= demo
 # Manual jobs that drive the demo scenes through the API with AUTOPILOT_TOKEN (see DEMO.md).

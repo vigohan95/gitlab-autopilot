@@ -49,7 +49,7 @@ the Spaces exist, use `--fake-url` so the monitor fails on an unreachable host.
 |---|---|---|---|
 | C1 | `demo.py chaos on` (or `demo:chaos-on`; add `--fake-url` without HF) | variable `PULSE_CHAOS=healthz` on environment `production`; schedule `monitor` played | 5 s |
 | C2 | scheduled pipeline | **monitor red** (`/healthz` 503 / unreachable, 3 attempts) → **incident** job: Monitor > Incidents gets `Production unhealthy …` with the report, rollback target, rules §6.1 §6.2 §6.3 | 2 min |
-| C3 | rollback pipeline (source: trigger, `ROLLBACK_TO=v0.1.x`) | deploy-staging → verify-staging → deploy-production from the previous release; `rollback-note` on the incident | 3 min |
+| C3 | rollback pipeline on branch `rollback/v0.1.x/incident-<iid>` (no pipeline variables; before 2026-10-14 the history project used `ROLLBACK_TO=v0.1.x` on `main`) | deploy-staging → verify-staging → deploy-production from the previous release; `rollback-note` on the incident | 3 min |
 | C4 | `demo.py chaos off` (or `demo:chaos-off`) | variable removed; next monitor run green | 5 s |
 
 Note: with `PULSE_CHAOS` set, the *rolled-back* production also reports 503

@@ -48,7 +48,8 @@ prompts:
            (section 7) was set — say so plainly. A version mismatch means a bad deploy. Timeouts mean the
            Space is asleep or the host is down.
         5. Check the rollback: the incident job's log and the incident notes contain the rollback pipeline URL;
-           confirm its status with get_pipeline (or list_pipelines on ref main, newest first). Report status and URL.
+           confirm its status with get_pipeline (or list_pipelines on ref rollback/<tag>/incident-<iid>,
+           newest first). If the incident says the rollback could NOT be started, say so and why. Report status and URL.
         6. Write the RCA as an incident note with these headings: Impact, Timeline (UTC), Root cause,
            Remediation (automatic), Follow-ups for humans, Evidence. End with:
            autopilot: rules=[section 6.1, section 6.2, section 6.3]

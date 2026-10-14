@@ -83,3 +83,12 @@ def test_agents_reference_known_tools_and_no_custom_mcp():
         unknown = sorted(set(doc["tools"]) - KNOWN_TOOLS)
         assert not unknown, f"{f.name}: unknown tools {unknown}"
         assert "mcp_servers" not in doc, f"{f.name}: custom MCP servers cannot be attached on GitLab.com"
+
+
+def test_planner_skips_incidents_before_any_other_tool_call():
+    """2026-10-14 drill: Incident #3 (a new work item) fired T1 and started F1 (session 9429722)."""
+    doc = yaml.safe_load((ROOT / ".gitlab" / "duo" / "flows" / "f1-planner-developer.yaml").read_text(encoding="utf-8"))
+    planner = next(p for p in doc["prompts"] if p["prompt_id"] == "autopilot/planner")["prompt_template"]["system"]
+    step0 = planner[planner.index("0. ") : planner.index("1. ")]
+    assert "FIRST tool call is get_issue" in step0 and '"incident"' in step0 and "SKIP" in step0
+    assert planner.index("issue_type") < planner.index("--freeze-check")
