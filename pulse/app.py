@@ -184,12 +184,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         rows = request.app.state.store.summary()
         body = "".join(
             "<tr><td>{name}</td><td><a href='{url}'>{url}</a></td><td class='{cls}'>{state}</td>"
-            "<td>{uptime}</td><td>{lat}</td><td>{p50}</td><td>{p95}</td><td>{ts}</td></tr>".format(
+            "<td>{uptime}</td><td>{uptime24}</td><td>{lat}</td><td>{p50}</td><td>{p95}</td><td>{ts}</td></tr>".format(
                 name=html.escape(r["name"]),
                 url=html.escape(r["url"]),
                 cls="up" if r["last_ok"] else "down",
                 state="UP" if r["last_ok"] else ("DOWN" if r["last_ok"] is not None else "n/a"),
                 uptime=f"{r['uptime_pct']}%" if r["uptime_pct"] is not None else "n/a",
+                uptime24=f"{r['uptime_24h_pct']}%" if r["uptime_24h_pct"] is not None else "n/a",
                 lat=f"{r['mean_latency_ms']} ms" if r["mean_latency_ms"] is not None else "n/a",
                 p50=f"{r['p50_latency_ms']} ms" if r["p50_latency_ms"] is not None else "n/a",
                 p95=f"{r['p95_latency_ms']} ms" if r["p95_latency_ms"] is not None else "n/a",
@@ -203,8 +204,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "table{border-collapse:collapse}td,th{padding:.4rem .8rem;border-bottom:1px solid #333}"
             ".up{color:#4ade80}.down{color:#f87171}</style></head><body>"
             f"<h1>pulse <small>v{html.escape(request.app.state.settings.version)}</small></h1>"
-            "<table><tr><th>site</th><th>url</th><th>state</th><th>uptime</th><th>latency</th><th>p50</th><th>p95</th>"
-            "<th>last check</th></tr>"
+            "<table><tr><th>site</th><th>url</th><th>state</th><th>uptime</th><th>uptime 24h</th>"
+            "<th>latency</th><th>p50</th><th>p95</th><th>last check</th></tr>"
             f"{body}</table></body></html>"
         )
 
