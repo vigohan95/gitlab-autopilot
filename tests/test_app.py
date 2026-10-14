@@ -1,7 +1,20 @@
+import re
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from pulse import __version__
 from pulse.app import Settings, create_app
+
+
+def _seed_flaky(client) -> None:
+    """One failed check 30h ago plus three fresh successes: overall 75.0%, last 24h 100.0%."""
+    store = client.app.state.store
+    site = store.add_site("flaky", "https://ok.test/flaky")
+    old = (datetime.now(UTC) - timedelta(hours=30)).isoformat(timespec="seconds")
+    store.record_check(site.id, False, 500, None, "HTTP 500", ts=old)
+    for _ in range(3):
+        store.record_check(site.id, True, 200, 10.0)
 
 
 def test_healthz_and_version(client):
@@ -92,6 +105,23 @@ def test_status_page_shows_uptime_24h(client):
     assert "<th>uptime 24h</th>" in page.text
     assert "<td>100.0%</td>" in page.text
     assert "<td>0.0%</td>" in page.text
+
+
+def test_summary_distinguishes_uptime_24h_from_overall(client):
+    _seed_flaky(client)
+    flaky = {r["name"]: r for r in client.get("/api/summary").json()}["flaky"]
+    assert flaky["uptime_pct"] == 75.0
+    assert flaky["uptime_24h_pct"] == 100.0
+    assert flaky["checks"] == 4
+
+
+def test_status_page_uptime_cells_in_column_order(client):
+    _seed_flaky(client)
+    page = client.get("/")
+    assert "<th>uptime</th><th>uptime 24h</th><th>latency</th>" in page.text
+    row = re.search(r"<tr><td>flaky</td>.*?</tr>", page.text)
+    assert row is not None
+    assert "<td class='up'>UP</td><td>75.0%</td><td>100.0%</td><td>10.0 ms</td>" in row.group(0)
 
 
 def test_status_page_html(client):
