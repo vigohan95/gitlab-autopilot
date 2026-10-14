@@ -146,14 +146,23 @@ lint:
     expire_in: 1 week
   rules: *rules_app
 
-# Hands-off hand-off: a merge request opened by the Developer flow's service account may not
-# fire the "Merge request: Created" trigger (triggers need a human actor). This job asks the
-# Code Review foundational flow to review it anyway. Advisory only. [VERIFY-IN-UI]
+# Hands-off hand-off: a merge request opened by the Developer flow's service account does not
+# fire the "Merge request: Created" trigger (triggers need a human actor; seen on MR !1). This job
+# starts the Code Review foundational flow AND our F2 Reviewer flow (policy review) through the API.
+# F2 is an AI Catalog flow, so it is addressed by its consumer id (CI variable AUTOPILOT_F2_CONSUMER_ID,
+# see scripts/start_flow.py). Advisory only: the CI gate enforces AUTOPILOT §3 regardless.
 review-handoff:
   stage: quality
   extends: .python
   script:
     - python scripts/start_flow.py --definition code_review/v1 --goal "$CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID"
+    - |
+      if [ -n "$AUTOPILOT_F2_CONSUMER_ID" ]; then
+        MR_URL="$CI_MERGE_REQUEST_PROJECT_URL/-/merge_requests/$CI_MERGE_REQUEST_IID"
+        python scripts/start_flow.py --consumer-id "$AUTOPILOT_F2_CONSUMER_ID" --merge-request "$CI_MERGE_REQUEST_IID" --goal "Review merge request !$CI_MERGE_REQUEST_IID ($MR_URL) against AUTOPILOT.md"
+      else
+        echo "AUTOPILOT_F2_CONSUMER_ID not set: F2 reviewer not started from CI (see scripts/start_flow.py); policy-check is the reviewer of record (AUTOPILOT §3.2)"
+      fi
   allow_failure: true
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
@@ -376,11 +385,26 @@ policy-check:
     - python scripts/policy.py --mr "$CI_MERGE_REQUEST_IID" --comment
   rules: *rules_mr
 
+# §3.2 as a real approval: reads F2's "Autopilot review: APPROVED" note and approves the MR with the CI
+# token on that verdict (scripts/review_approve.py says so in its note). Waits for the verdict only when
+# F2 could have been started (consumer id set); otherwise exits at once and auto-merge uses the label.
+review-approve:
+  stage: govern
+  extends: .python
+  needs: [policy-check]
+  script:
+    - if [ -n "$AUTOPILOT_F2_CONSUMER_ID" ]; then WAIT=600; else WAIT=0; fi
+    - python scripts/review_approve.py --mr "$CI_MERGE_REQUEST_IID" --wait "$WAIT" --interval 30
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
+
 auto-merge:
   stage: govern
   extends: .python
   needs:
     - policy-check
+    - review-approve
     - test
     - lint
     - pip-audit

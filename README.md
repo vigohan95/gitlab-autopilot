@@ -57,9 +57,14 @@ registered and enabled in the hackathon project. **Executed for real:** F1
 Planner + Developer (session 9286698), Code Review (session 9286720) and F5
 Closer (workflow pipeline 2933596153), see row 0 of the judges' table. **Not
 executed:** F2 did not fire for the flow-created MR (triggers need a human
-actor; the `review-handoff` CI job covered review); F3 and F4 ran only triage
-sessions because no scanner failure or incident occurred in the hackathon
-project. Treat those two as *designed and registered*, not as *executed*.
+actor; the `review-handoff` CI job covered review — since 2026-10-14 that job
+also starts F2 itself, and the `review-approve` job turns F2's
+`Autopilot review: APPROVED` note into a GitLab approval **performed by the CI
+token on the agent's verdict**, `scripts/review_approve.py`, so §3.2 is a real
+MR approval on the next flow-created MR); F3 and F4 ran only triage sessions
+because no scanner failure or incident occurred in the hackathon project
+(`docs/RUNBOOK-M1-M2.md` is the runbook that makes both happen for real).
+Treat those two as *designed and registered*, not as *executed*.
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
@@ -177,8 +182,8 @@ machine-readable YAML block that `scripts/policy.py` enforces in CI. Agents and
 scripts cite rule numbers (`autopilot: rules=[§2.1, §3.4]`) in every note, so a
 reader can see why the agent was allowed to merge, roll back, or stop.
 
-- §1 scope (only `autopilot` issues) · §2 protected paths and dependency bumps
-  · §3 merge gate (green, approved, no High/Critical, ≤400 lines) · §4 what a
+- §1 scope (only `autopilot` issues, judging freeze) · §2 protected paths and dependency bumps
+  · §3 merge gate (green, approved — the F2 verdict turned into a real MR approval by the CI token —, no High/Critical, ≤400 lines) · §4 what a
   security fix may change · §5 release and promotion order · §6 self-healing
   (never roll forward) · §7 chaos switch for the demo · §8 retry budget · §9
   secrets and audit.
@@ -187,7 +192,7 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 
 | piece | files | notes |
 |---|---|---|
-| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered and enabled in the hackathon project; F1 and F5 have run for real (judges' table, row 0), F2 did not fire for a flow-created MR, F3/F4 triage only |
+| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered and enabled in the hackathon project; F1 and F5 have run for real (judges' table, row 0), F2 did not fire for a flow-created MR (now started by `review-handoff`, its verdict approved by `review-approve`), F3/F4 triage only |
 | 4 custom agents | [`.gitlab/duo/agents/`](.gitlab/duo/agents) | `autopilot-reviewer`, `security-fixer`, `incident-responder`, `release-scribe` (for Chat and the UI; their prompts are embedded in the flows because custom flows cannot call custom agents) |
 | 5 triggers | [`.gitlab/duo/triggers.md`](.gitlab/duo/triggers.md) | work item created, MR created, pipeline failed ×2, pipeline passed |
 | 3 foundational flows | — | Developer, Code Review (with [`mr-review-instructions.yaml`](.gitlab/duo/mr-review-instructions.yaml)), Fix CI/CD Pipeline |
@@ -222,6 +227,7 @@ Everything is free-tier; no card is needed anywhere.
    | variable | value | flags |
    |---|---|---|
    | `AUTOPILOT_TOKEN` | project access token, scope `api`, role Maintainer | masked, **not** protected (MR pipelines run on unprotected branches) |
+   | `AUTOPILOT_F2_CONSUMER_ID` | numeric id of the `f2-reviewer` flow's consumer in this project (`scripts/start_flow.py` docstring has the GraphQL query); lets `review-handoff` start F2 on flow-created MRs | — |
    | `RENDER_API_KEY` | Render API key (Account Settings > API Keys); the two free services come from `render.yaml` (New > Blueprint) | masked, protected |
    | `PULSE_STAGING_URL` / `PULSE_PRODUCTION_URL` | the `onrender.com` URLs printed by the first deploy (used by the scheduled monitor) | — |
    | `PULSE_CHAOS` | `healthz` — **only** on environment `production`, only during the demo (AUTOPILOT §7) | environment-scoped |
@@ -247,7 +253,9 @@ Everything is free-tier; no card is needed anywhere.
    2 hours), branch `main`, description "monitor". It was every 15 minutes
    until 2026-10-13; `docs/SCI.md` has the measured cost of both cadences.
 9. **Approval rule (govern):** Settings > Merge requests > Approval rules: one
-   required approval; "Prevent approval by author" off so the agent can approve.
+   required approval; "Prevent approval by author" off. The approval itself is
+   made by the CI token (`review-approve` job) on the F2 agent's APPROVED verdict —
+   we do not rely on a flow service account's approval counting.
 10. **Run it:** New issue > template `autopilot` > describe a small change.
     Watch AI > Sessions, the MR, the pipeline, Operate > Environments, and the
     issue's journey card.

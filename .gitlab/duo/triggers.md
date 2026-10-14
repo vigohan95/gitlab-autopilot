@@ -21,8 +21,11 @@ Notes from the docs (docs.gitlab.com/user/duo_agent_platform/triggers/):
   accounts, and other flows cannot activate a trigger." T1 is fired by the human creating the
   issue. T2 may **not** fire if the MR was created by the Developer flow's service account
   (composite identity attributes the MR to the human, so it may fire) — `[VERIFY-IN-UI]`.
-  Fallback already in place: the `review-handoff` CI job starts the Code Review flow via API,
-  and the `auto-merge` CI job enforces AUTOPILOT §3 regardless.
+  **Confirmed on MR !1 (2026-10-10): T2 did not fire for the flow-created MR.** Fallback in place: the
+  `review-handoff` CI job starts the Code Review flow *and* F2 via the API (`scripts/start_flow.py`; F2 is
+  addressed by its AI Catalog consumer id, CI variable `AUTOPILOT_F2_CONSUMER_ID`), the `review-approve`
+  job turns F2's `Autopilot review: APPROVED` note into a GitLab approval made by the CI token
+  (`scripts/review_approve.py`, honest note), and the `auto-merge` CI job enforces AUTOPILOT §3 regardless.
 - T3/T4/T5 fire on pipeline state changes of pipelines that a human caused (merge, schedule
   owner). Scheduled pipelines run as the schedule owner (a human) `[VERIFY-IN-UI]`.
 - Only one flow per trigger; T3 and T4 are two triggers on the same event. Each flow triages
