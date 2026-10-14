@@ -277,7 +277,7 @@ rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                              #  tests, no network
+python -m pytest -q                              # 95 tests, no network
 ruff check . && ruff format --check .
 PULSE_DB=:memory: PULSE_INTERVAL=0 PULSE_SITES=gitlab=https://gitlab.com/ python -m pulse
 python scripts/check_ci_schema.py                # validates .gitlab-ci.yml against GitLab's schema
