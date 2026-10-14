@@ -428,6 +428,20 @@ journey-card:
     expire_in: 1 month
   rules: *rules_main
 
+# Login-free receipts page on GitLab Pages (Deploy > Pages for the URL): every autopilot journey with its
+# lead time, human-touch count and CI footprint, read from the project's own issues/MRs/notes. scripts/receipts_page.py
+pages:
+  stage: govern
+  extends: .python
+  needs: [journey-card]
+  script:
+    - python scripts/receipts_page.py --out public
+  artifacts:
+    paths:
+      - public
+    expire_in: 1 month
+  rules: *rules_main
+
 rollback-note:
   stage: govern
   extends: .python

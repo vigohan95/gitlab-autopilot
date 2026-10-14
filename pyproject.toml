@@ -47,6 +47,7 @@ ignore = ["S101"]  # assert in tests
 "tests/*" = ["S105", "S106"]
 "scripts/*" = ["S603", "S607"]
 "scripts/make_video.py" = ["E501", "S110"]  # embedded HTML/CSS strings; best-effort page tweaks
+"scripts/receipts_page.py" = ["E501"]  # embedded HTML/CSS template
 
 [tool.coverage.run]
 source = ["pulse", "mcp_server"]

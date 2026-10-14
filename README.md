@@ -11,6 +11,7 @@ story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 >
 > - **File an issue:** [new issue from the `autopilot` template](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/new?issuable_template=autopilot) (any signed-in GitLab.com user). The Planner flow answers with a numbered plan citing `AUTOPILOT.md` in about 2 minutes, the Developer step opens the MR, CI reviews, gates, merges, releases and writes the journey card and the narrative back on your issue (about 15 minutes wall clock; the 2026-10-10 run below is what to expect).
 > - **Replay the three scenes without Duo** — manual jobs in the `demo` stage of the latest [`main` pipeline](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines?ref=main) (today: [pipeline 2941380630](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2941380630); playing a job needs the Developer role on the project, reading the logs does not): [`demo:mr`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17131783514) — the hands-off merge: issue → one-line version-bump MR → `policy-check` → `auto-merge` → `release-cli` release → journey card, ~12 min. [`demo:security`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17131783515) then [`demo:security-fix`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17131783516) — the security gate: the MR pins `fastapi==0.125.0`, `pip-audit` goes red on starlette PYSEC-2026-248/249 and the MR cannot merge; the fix restores the pin citing §4.1 §4.2 and merges, ~14 min. [`demo:chaos-on`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17131783517) then [`demo:chaos-off`](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/jobs/17131783518) — self-healing: production is broken, the scheduled `monitor` goes red, the `incident` job opens a GitLab Incident and starts the rollback, ~5 min. `DEMO.md` has the step-by-step timings.
+> - **Receipts without signing in:** the `pages` job publishes [a one-page table of every journey](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pages) (Deploy > Pages has the live URL) — lead time, human actions after filing, CI footprint, each number linking to the GitLab note it came from (`scripts/receipts_page.py`).
 > - **Judging freeze:** after **2026-10-27 13:00 UTC** (AUTOPILOT §1.3, enforced by `scripts/policy.py` on merge requests and by the Planner flow on issues) a new `autopilot` issue or MR gets one polite "frozen for judging" note and nothing else happens.
 
 **It ran for real on 2026-10-10 (every link is a public page):** one human filed
@@ -205,8 +206,9 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 pulse/              the service (FastAPI, SQLite, probes)
 tests/              pytest (no network; httpx.MockTransport)
 scripts/            CI helpers: policy.py, automerge.py, monitor.py, incident.py,
-                    deploy.py, deploy_render.py, release_notes.py, journey_card.py, codequality.py,
-                    start_flow.py, check_ci_schema.py, gitlab_api.py
+                    deploy.py, deploy_render.py, release_notes.py, journey_card.py, sci.py, codequality.py,
+                    start_flow.py, review_approve.py, receipts_page.py, check_ci_schema.py, gitlab_api.py
+docs/               SCI.md (CI footprint method + sources), RUNBOOK-M1-M2.md (security + incident scenarios)
 mcp_server/         read-only MCP server for the Incident Responder
 .gitlab/duo/        flows, agents, triggers, mcp.json, agent-config.yml, review instructions
 .gitlab-ci.yml      the eleven-stage pipeline
@@ -275,7 +277,7 @@ rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                              # 44 tests, no network
+python -m pytest -q                              #  tests, no network
 ruff check . && ruff format --check .
 PULSE_DB=:memory: PULSE_INTERVAL=0 PULSE_SITES=gitlab=https://gitlab.com/ python -m pulse
 python scripts/check_ci_schema.py                # validates .gitlab-ci.yml against GitLab's schema
