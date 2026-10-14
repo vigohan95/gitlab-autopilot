@@ -40,6 +40,7 @@ LABELS = {
     "rca::done": "#2da160",
 }
 SCHEDULE_DESC = "monitor"
+MONITOR_CRON = "0 */2 * * *"  # every 2 h (was */15: ~149 runner-minutes a day for nothing new, see docs/SCI.md)
 VULNERABLE_FASTAPI = "0.125.0"
 FAKE_PROD_URL = "https://pulse-chaos.invalid"
 
@@ -122,7 +123,7 @@ class Demo:
     def play_schedule(self) -> dict:
         s = self.schedule() or self.gl.post(
             "pipeline_schedules",
-            json={"description": SCHEDULE_DESC, "ref": self.ref, "cron": "*/15 * * * *", "active": True},
+            json={"description": SCHEDULE_DESC, "ref": self.ref, "cron": MONITOR_CRON, "active": True},
         )
         return self.gl.post(f"pipeline_schedules/{s['id']}/play")
 
@@ -138,9 +139,9 @@ def scene_setup(d: Demo) -> int:
     if not s:
         s = d.gl.post(
             "pipeline_schedules",
-            json={"description": SCHEDULE_DESC, "ref": d.ref, "cron": "*/15 * * * *", "active": True},
+            json={"description": SCHEDULE_DESC, "ref": d.ref, "cron": MONITOR_CRON, "active": True},
         )
-        print(f"schedule created: {SCHEDULE_DESC} (*/15 * * * *)")
+        print(f"schedule created: {SCHEDULE_DESC} ({MONITOR_CRON})")
     else:
         print(f"schedule present: {SCHEDULE_DESC} (next run {s.get('next_run_at')})")
     keys = {v["key"] for v in d.gl.get_all("variables")}

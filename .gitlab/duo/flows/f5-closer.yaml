@@ -43,8 +43,11 @@ prompts:
         4. Post an issue note (create_issue_note) titled "Autopilot journey — narrative" with:
            what was asked, what was built (from the MR), how it was reviewed (rule numbers cited by the
            reviewer), what the scanners found, the release tag if any, the staging and production
-           deployment URLs, total wall-clock time from issue creation to production, and any
-           follow-ups for humans. End with: autopilot: rules=[section 1.2, section 5.3, section 9.2]
+           deployment URLs, the lead time (issue created -> production deployed), the number of human
+           actions after filing and the CI footprint line -- quote these three exactly as the
+           "Autopilot journey card" note on the issue states them (list_issue_notes; the card is the
+           deterministic source, do not recompute) -- and any follow-ups for humans.
+           End with: autopilot: rules=[section 1.2, section 5.3, section 9.2]
         5. If a release was created by this pipeline (list_releases, newest released_at after the pipeline
            started), post a short "Highlights" paragraph for it as a note on the issue (mention the tag).
         6. Close the issue with update_issue (state_event close).

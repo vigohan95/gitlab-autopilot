@@ -120,7 +120,7 @@ flowchart TD
     MP -->|trigger T5: pipeline passed| F5
     F5 -->|narrative + close| H
 
-    SCH([schedule: every 15 min]) --> MON[monitor job<br/>monitor]
+    SCH([schedule: every 2 h]) --> MON[monitor job<br/>monitor]
     MON -->|fail| INC[incident job:<br/>opens Incident, triggers rollback]
     INC -->|ROLLBACK_TO=last release| MP
     MON -->|trigger T4: pipeline failed| F4
@@ -150,7 +150,7 @@ Two layers, on purpose:
 | **release** | `release-cli` cuts `vX.Y.Z` with generated notes and asset links when the version changes | Deploy > Releases |
 | **configure** | Environments `staging` → `production` on free Render web services (deploy by commit), `resource_group`s, rollback job | Operate > Environments (deployment history) |
 | **monitor** | scheduled `monitor` job probes `/healthz` and `/version`; red → `incident` job opens a GitLab Incident and triggers rollback; Incident Responder flow writes the RCA | Monitor > Incidents; the rollback pipeline (`ROLLBACK_TO`) |
-| **govern** | `policy-check` enforces AUTOPILOT.md on every MR; `auto-merge` cites the rules; `audit-trail` artifact; MR approval rule; GitLab audit events; journey card on the issue | MR notes; Secure > Audit events; the journey card |
+| **govern** | `policy-check` enforces AUTOPILOT.md on every MR; `auto-merge` cites the rules; `audit-trail` artifact; MR approval rule; GitLab audit events; journey card on the issue with **lead time** (issue created → production deployed), **human actions after filing** and the **CI footprint** (`scripts/sci.py`, an estimate documented in [`docs/SCI.md`](docs/SCI.md), also the `sci.json` artifact) | MR notes; Secure > Audit events; the journey card |
 
 ## Judges: how to verify in 5 minutes
 
@@ -243,8 +243,9 @@ Everything is free-tier; no card is needed anywhere.
    service account). Settings > Repository > Push rules: allow the service
    account; Protected branches: allow it to push to `autopilot/*` branches.
 7. **Triggers:** AI > Triggers, five triggers as in `.gitlab/duo/triggers.md`.
-8. **Schedule:** Build > Pipeline schedules > New: every 15 minutes, branch
-   `main`, description "monitor".
+8. **Schedule:** Build > Pipeline schedules > New: cron `0 */2 * * *` (every
+   2 hours), branch `main`, description "monitor". It was every 15 minutes
+   until 2026-10-13; `docs/SCI.md` has the measured cost of both cadences.
 9. **Approval rule (govern):** Settings > Merge requests > Approval rules: one
    required approval; "Prevent approval by author" off so the agent can approve.
 10. **Run it:** New issue > template `autopilot` > describe a small change.
@@ -260,7 +261,7 @@ Everything is free-tier; no card is needed anywhere.
 pipeline) plays the three scenes — hands-off merge + release, security gate, chaos → incident →
 rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
-[^quota]: Since 2026-10-10 the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the half-hourly monitor and the demo scenes. The mirror pushes there with `ci.skip`; new pipelines run in the judged (showcase) project, and the history project's pipelines, releases, environments and incidents stay as evidence.
+[^quota]: Since 2026-10-10 the history project's monitor schedule is paused: the personal namespace's Free-tier CI quota (400 min/month) was consumed by the quarter-hourly monitor (which also dragged `semgrep-sast` and `audit-trail` along on every run — about 149 runner-minutes a day; now every 2 h and monitor-only, about 6, see [`docs/SCI.md`](docs/SCI.md)) and the demo scenes. The mirror pushes there with `ci.skip`; new pipelines run in the judged (showcase) project, and the history project's pipelines, releases, environments and incidents stay as evidence.
 
 ## Local development
 
