@@ -28,6 +28,11 @@ Notes from the docs (docs.gitlab.com/user/duo_agent_platform/triggers/):
   (`scripts/review_approve.py`, honest note), and the `auto-merge` CI job enforces AUTOPILOT §3 regardless.
 - T3/T4/T5 fire on pipeline state changes of pipelines that a human caused (merge, schedule
   owner). Scheduled pipelines run as the schedule owner (a human) `[VERIFY-IN-UI]`.
+- **Confirmed in the 2026-10-14 drill (`docs/DRILL-2026-10-14.md`):** T3 started F3 on the failed pipeline of the
+  human-opened MR !2, and F3 opened fix MR !3. The failed scheduled monitor pipeline started F4, which wrote the RCA on
+  Incident #3. **T1 also fires for incidents**, because an incident is a new work item: F1 started for Incident #3
+  (session 9429722) and changed nothing. The F1 planner now skips incidents in its first step. Re-paste
+  `f1-planner-developer.yaml` into AI > Flows for that to take effect.
 - Only one flow per trigger; T3 and T4 are two triggers on the same event. Each flow triages
   first and ends in seconds when the failure is not its kind (credits are charged per flow run).
 - **Configuration path** (`.gitlab/duo/flows/<file>.yaml`) instead of AI Catalog requires the

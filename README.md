@@ -7,6 +7,29 @@ scanners find, merge it, package it, release it, promote it from staging to
 production, watch it in production, roll it back if it breaks, and write the
 story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 
+**Live drill, 2026-10-14 — failures included** (judged project; the full timeline is in
+[`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md)). We ran two scenarios on purpose so that the
+Reviewer, Security Fixer and Incident Responder flows had real work to do:
+
+- **Security loop.** A human opened [MR !2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/2) pinning `fastapi==0.125.0`. F2 answered
+  HUMAN REQUIRED (§2.2, §3.3). `pip-audit` failed [pipeline 2945456466](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945456466) (starlette,
+  10 known vulnerabilities). **F3 opened fix [MR !3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/3)** (`fastapi==0.143.0`) and F2 approved
+  it. A human merged !3 into the feature branch (§3.2), then `auto-merge` merged !2. The vulnerable pin never
+  reached `main`.
+- **Incident loop.** The monitor schedule, pointed at an always-503 URL, failed. The `incident` job opened
+  [Incident #3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3). **F4 posted the [RCA](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3#note_4010170073)** about 80 s later. It
+  named the real cause, a misconfigured probe target, and said a rollback would not help.
+- **What broke, fixed the same day:**
+  1. The §3.3 "new findings" baseline was empty for a fix MR into a feature branch, so the gate held a correct
+     fix (`abee55e`).
+  2. A `policy-check` label could override the reviewer agent's HUMAN REQUIRED verdict (`838637f`).
+  3. **The automatic rollback was refused.** It needed pipeline variables, which our Developer role may not set.
+     It now runs on a `rollback/<tag>/incident-<iid>` branch with no variables (`5f2d251`); this is tested but
+     not yet run in a live incident.
+
+  The incident also woke F1, because every new work item fires its trigger. F1 changed nothing. It now skips
+  incidents as its first step, which takes effect once the registered flow is re-pasted in AI > Flows.
+
 > **Play it yourself — one click each, nothing to install.**
 >
 > - **File an issue:** [new issue from the `autopilot` template](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/new?issuable_template=autopilot) (any signed-in GitLab.com user). The Planner flow answers with a numbered plan citing `AUTOPILOT.md` in about 2 minutes, the Developer step opens the MR, CI reviews, gates, merges, releases and writes the journey card and the narrative back on your issue (about 15 minutes wall clock; the 2026-10-10 run below is what to expect).
@@ -53,19 +76,21 @@ reasoning layer — 5 custom flows, 4 custom agents, 5 triggers and a read-only
 MCP server, defined in `.gitlab/duo/` and registered in the showcase project's
 Agent Platform (plan/create by the Planner + Developer flow, policy review by
 the Reviewer flow, security fixes, incident RCA, the narrative journey card).
-Status on 2026-10-13: the four agents, five flows and five triggers are
-registered and enabled in the hackathon project. **Executed for real:** F1
-Planner + Developer (session 9286698), Code Review (session 9286720) and F5
-Closer (workflow pipeline 2933596153), see row 0 of the judges' table. **Not
-executed:** F2 did not fire for the flow-created MR (triggers need a human
-actor; the `review-handoff` CI job covered review — since 2026-10-14 that job
-also starts F2 itself, and the `review-approve` job turns F2's
+The four agents, five flows and five triggers are registered and enabled in
+the hackathon project, and **all five custom flows have run for real**:
+
+- **2026-10-10 (row 0 of the judges' table):** F1 Planner + Developer
+  (session 9286698), Code Review (session 9286720) and F5 Closer (workflow
+  pipeline 2933596153).
+- **2026-10-14 (rows 0b and 0c):** F2 Reviewer (session 9426174, HUMAN REQUIRED
+  on !2; session 9426628, APPROVED on !3), F3 Security Fixer (opened fix MR !3)
+  and F4 Incident Responder (the RCA on Incident #3).
+
+The `Merge request created` trigger does not fire for a *flow-created* MR,
+because triggers need a human actor. The `review-handoff` CI job therefore
+starts F2 through the API, and `review-approve` turns F2's
 `Autopilot review: APPROVED` note into a GitLab approval **performed by the CI
-token on the agent's verdict**, `scripts/review_approve.py`, so §3.2 is a real
-MR approval on the next flow-created MR); F3 and F4 ran only triage sessions
-because no scanner failure or incident occurred in the hackathon project
-(`docs/RUNBOOK-M1-M2.md` is the runbook that makes both happen for real).
-Treat those two as *designed and registered*, not as *executed*.
+token on the agent's verdict** (`scripts/review_approve.py`).
 
 > **Hackathon project (judged, Duo Agent Platform):** https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase — flows, agents, triggers, AI > Sessions, and the mirrored pipeline.
 > **History project (same code, where the pipeline operated for real):** https://gitlab.com/hanwg666/gitlab-autopilot — merge requests !1–!3, releases v0.1.0–v0.1.2, environments on Render, incidents and rollbacks.
@@ -128,7 +153,7 @@ flowchart TD
 
     SCH([schedule: every 2 h]) --> MON[monitor job<br/>monitor]
     MON -->|fail| INC[incident job:<br/>opens Incident, triggers rollback]
-    INC -->|ROLLBACK_TO=last release| MP
+    INC -->|rollback branch: last release, no variables| MP
     MON -->|trigger T4: pipeline failed| F4
     F4 -->|RCA on the Incident| INC
 ```
@@ -155,7 +180,7 @@ Two layers, on purpose:
 | **secure** | SAST + Secret Detection (GitLab templates, run on every MR and on `main`) and **`pip-audit`** (fails the pipeline on any known vulnerability — this is the scanner that blocked MR !3). Dependency Scanning and Container Scanning are included from the GitLab templates but **self-skip on the Free tier** (they show as allowed-to-fail/skipped; Ultimate only). Failures → Security Fixer flow (Duo) or a scripted fix MR | MR security widget; red `pip-audit` job on MR !3; fix MRs labelled `security-fix` |
 | **release** | `release-cli` cuts `vX.Y.Z` with generated notes and asset links when the version changes | Deploy > Releases |
 | **configure** | Environments `staging` → `production` on free Render web services (deploy by commit), `resource_group`s, rollback job | Operate > Environments (deployment history) |
-| **monitor** | scheduled `monitor` job probes `/healthz` and `/version`; red → `incident` job opens a GitLab Incident and triggers rollback; Incident Responder flow writes the RCA | Monitor > Incidents; the rollback pipeline (`ROLLBACK_TO`) |
+| **monitor** | scheduled `monitor` job probes `/healthz` and `/version`; red → `incident` job opens a GitLab Incident and triggers rollback; Incident Responder flow writes the RCA | Monitor > Incidents; the rollback pipeline on branch `rollback/<tag>/incident-<iid>` |
 | **govern** | `policy-check` enforces AUTOPILOT.md on every MR; `auto-merge` cites the rules; `audit-trail` artifact; MR approval rule; GitLab audit events; journey card on the issue with **lead time** (issue created → production deployed), **human actions after filing** and the **CI footprint** (`scripts/sci.py`, an estimate documented in [`docs/SCI.md`](docs/SCI.md), also the `sci.json` artifact) | MR notes; Secure > Audit events; the journey card |
 
 ## Judges: how to verify in 5 minutes
@@ -165,6 +190,8 @@ Everything below is a page in this project; nothing needs to be run locally.
 | minute | open | what you should see |
 |---|---|---|
 | 0 | [issue #2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/2) · [MR !1](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/1) · [main pipeline 2933589447](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2933589447) in the **hackathon project** (AI > Sessions/Flows/Agents need a signed-in member) | **A real, complete Duo Agent Platform run (2026-10-10):** issue #2 "Add per-site latency percentiles (p50/p95)" filed by a human → `Work item created` trigger → **`f1-planner-developer` (session 9286698)**: plan note citing AUTOPILOT §2.1 §2.2 §3.4, commit by `f1-planner-developer` (4 files, code + tests), MR !1. The `review-handoff` job started **GitLab Duo Code Review (session 9286720)**: "found nothing to comment on". (The `Merge request created` trigger did not start `f2` for a flow-created MR — triggers need a human actor — which is why the CI hand-off exists.) `policy-check` approved. `auto-merge` refused **twice, honestly**: first it counted all 44 pre-existing High/Critical base-image findings (policy says *new*; fixed), then the finding key still carried the per-commit image tag (fixed); both refusals are notes on the MR. After a rebase the gate passed — "§3.3 no new High/Critical findings (44 pre-existing, tracked on main)" — and **MR !1 merged at 14:10Z (`de42064a`)**, closing #2. Main pipeline 2933589447 (Ultimate scanners, dry-run deploys) posted the journey card; the `Pipeline passed` trigger started **`f5-closer`** (workflow pipeline 2933596153), which posted "Autopilot journey — narrative" on #2 at 14:18Z. One human action; agents planned, wrote and narrated; CI kept the gate. |
+| 0b | [MR !2](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/2) · [MR !3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/merge_requests/3) · [pipeline 2945456466](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945456466) · [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md) | **Security loop, live (2026-10-14).** A human opened !2 pinning `fastapi==0.125.0` with the `autopilot` label. **F2** (session 9426174) answered HUMAN REQUIRED, citing §2.2 and §3.3. `pip-audit` went red (starlette 0.50.0, 10 known vulnerabilities) and `auto-merge` never ran. **F3** (trigger: pipeline failed) read the log and opened fix MR !3 (`fastapi==0.143.0`, labels `autopilot` + `security-fix`); F2 approved it (session 9426628). The gate then held the correct fix: its §3.3 baseline was empty for a feature branch (finding 1, fixed in `abee55e`). A human merged !3 (§3.2), and `auto-merge` merged !2 into `main` at 06:56Z with an empty net diff. Finding 2 (`838637f`): a `policy-check` label could override F2's HUMAN REQUIRED verdict. The verdict is now authoritative. |
+| 0c | [Incident #3](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3) · [scheduled pipeline 2945603793](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/pipelines/2945603793) · [RCA note](https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/issues/3#note_4010170073) | **Incident loop, live (2026-10-14).** `PULSE_PRODUCTION_URL` pointed at an always-503 endpoint for a zero-cost outage. The scheduled `monitor` reported DOWN after 5 attempts (07:02:30Z). The `incident` job opened Incident #3 (07:03:04Z). **F4** posted the RCA at 07:04:25Z (Impact, Timeline, Root cause, Remediation): it identified a misconfigured probe target, not a PULSE fault, said a rollback would not help, and added `rca::done`. **The automatic rollback was refused:** "Insufficient permissions to set pipeline variables" (finding 3). It now runs on a `rollback/<tag>/incident-<iid>` branch with no variables (`5f2d251`). This is tested but not yet run in a live incident. The incident also started F1, which made no change; F1 now skips incidents first. |
 | 1 | [Pipelines](https://gitlab.com/hanwg666/gitlab-autopilot/-/pipelines) → the latest `main` pipeline | 12 stages left to right: `version` → `test` `lint` → `semgrep-sast` `secret_detection` `pip-audit` → `build-image` → `container_scanning` `build-wheel` → `release` → `deploy-staging` → `verify-staging` → `deploy-production` → `journey-card` `audit-trail` → `demo:*` (manual). Every job is green; click any for its log. |
 | 2 | [Releases](https://gitlab.com/hanwg666/gitlab-autopilot/-/releases) · [Container Registry](https://gitlab.com/hanwg666/gitlab-autopilot/container_registry) · [Package Registry](https://gitlab.com/hanwg666/gitlab-autopilot/-/packages) | `v0.1.0`, `v0.1.1` cut by `release-cli` with generated notes and asset links; the image tagged by commit SHA, `latest` and `vX.Y.Z`; the `pulse-monitor` wheel per version. |
 | 3 | [Environments](https://gitlab.com/hanwg666/gitlab-autopilot/-/environments) | `staging` and `production` with deployment history (dry-run until `RENDER_API_KEY` is present, then live `onrender.com` URLs). |
@@ -193,7 +220,7 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 
 | piece | files | notes |
 |---|---|---|
-| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered and enabled in the hackathon project; F1 and F5 have run for real (judges' table, row 0), F2 did not fire for a flow-created MR (now started by `review-handoff`, its verdict approved by `review-approve`), F3/F4 triage only |
+| 5 custom flows (flow registry v1, `environment: ambient`) | [`.gitlab/duo/flows/`](.gitlab/duo/flows) | F1 planner+developer, F2 reviewer, F3 security fixer, F4 incident responder, F5 closer. Registered and enabled in the hackathon project; all five have run for real: F1 and F5 on 2026-10-10 (judges' table, row 0), F2, F3 and F4 in the 2026-10-14 drill (rows 0b, 0c). For flow-created MRs, `review-handoff` starts F2 and `review-approve` turns its verdict into the approval |
 | 4 custom agents | [`.gitlab/duo/agents/`](.gitlab/duo/agents) | `autopilot-reviewer`, `security-fixer`, `incident-responder`, `release-scribe` (for Chat and the UI; their prompts are embedded in the flows because custom flows cannot call custom agents) |
 | 5 triggers | [`.gitlab/duo/triggers.md`](.gitlab/duo/triggers.md) | work item created, MR created, pipeline failed ×2, pipeline passed |
 | 3 foundational flows | — | Developer, Code Review (with [`mr-review-instructions.yaml`](.gitlab/duo/mr-review-instructions.yaml)), Fix CI/CD Pipeline |
@@ -207,8 +234,10 @@ pulse/              the service (FastAPI, SQLite, probes)
 tests/              pytest (no network; httpx.MockTransport)
 scripts/            CI helpers: policy.py, automerge.py, monitor.py, incident.py,
                     deploy.py, deploy_render.py, release_notes.py, journey_card.py, sci.py, codequality.py,
-                    start_flow.py, review_approve.py, receipts_page.py, check_ci_schema.py, gitlab_api.py
-docs/               SCI.md (CI footprint method + sources), RUNBOOK-M1-M2.md (security + incident scenarios)
+                    rollback_ref.py, start_flow.py, review_approve.py, receipts_page.py, check_ci_schema.py,
+                    gitlab_api.py
+docs/               SCI.md (CI footprint method + sources), RUNBOOK-M1-M2.md (security + incident scenarios),
+                    DRILL-2026-10-14.md (what the live drill ran, found and fixed)
 mcp_server/         read-only MCP server for the Incident Responder
 .gitlab/duo/        flows, agents, triggers, mcp.json, agent-config.yml, review instructions
 .gitlab-ci.yml      the eleven-stage pipeline
@@ -230,7 +259,7 @@ Everything is free-tier; no card is needed anywhere.
    |---|---|---|
    | `AUTOPILOT_TOKEN` | project access token, scope `api`, role Maintainer | masked, **not** protected (MR pipelines run on unprotected branches) |
    | `AUTOPILOT_F2_CONSUMER_ID` | numeric id of the `f2-reviewer` flow's consumer in this project (`scripts/start_flow.py` docstring has the GraphQL query); lets `review-handoff` start F2 on flow-created MRs | — |
-   | `RENDER_API_KEY` | Render API key (Account Settings > API Keys); the two free services come from `render.yaml` (New > Blueprint) | masked, protected |
+   | `RENDER_API_KEY` | Render API key (Account Settings > API Keys); the two free services come from `render.yaml` (New > Blueprint) | masked, protected — and protect `rollback/*` too (push: Developers + Maintainers), or the rollback pipeline, which runs on `rollback/<tag>/incident-<iid>`, cannot see it |
    | `PULSE_STAGING_URL` / `PULSE_PRODUCTION_URL` | the `onrender.com` URLs printed by the first deploy (used by the scheduled monitor) | — |
    | `PULSE_CHAOS` | `healthz` — **only** on environment `production`, only during the demo (AUTOPILOT §7) | environment-scoped |
 
@@ -277,7 +306,7 @@ rollback — through the API with only `AUTOPILOT_TOKEN`.[^quota]
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                              # 95 tests, no network
+python -m pytest -q                              # 107 tests, no network
 ruff check . && ruff format --check .
 PULSE_DB=:memory: PULSE_INTERVAL=0 PULSE_SITES=gitlab=https://gitlab.com/ python -m pulse
 python scripts/check_ci_schema.py                # validates .gitlab-ci.yml against GitLab's schema
