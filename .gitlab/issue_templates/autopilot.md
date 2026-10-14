@@ -1,4 +1,7 @@
-<!-- Autopilot issue: the only human action in the journey. Keep it small (one MR, < 400 lines). -->
+<!-- Autopilot issue: the only human action in the journey. Keep it small (one MR, < 400 lines).
+     The Planner flow answers with a numbered plan in about 2 minutes, the Developer step opens the MR,
+     CI reviews/gates/merges/releases, the journey card and narrative land back here.
+     Judging freeze: after 2026-10-27 13:00 UTC (AUTOPILOT §1.3) you get one polite note and no change. -->
 
 ## What should change
 

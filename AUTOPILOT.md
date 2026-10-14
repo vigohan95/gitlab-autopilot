@@ -19,7 +19,15 @@ Developer flow. Any other issue is ignored by every flow and agent.
 green through `deploy-production`, and the journey card has been posted on the
 issue. Only then may the Closer flow close the issue.
 
-1.3 Agents never touch issues, merge requests or branches outside this project.
+1.3 **Judging freeze.** After `freeze_after` (2026-10-27T13:00Z, the hackathon
+submission deadline) Autopilot makes no change at all: a new `autopilot` issue
+or merge request receives one polite "frozen for judging" note and is left as
+it is — no plan, no branch, no merge, no label change. The `policy-check` job
+enforces this on merge requests; the Planner flow checks it before planning an
+issue (`python scripts/policy.py --freeze-check`). The freeze is a policy value,
+not a code constant: lifting it is an edit to this file, reviewed by a human.
+
+1.4 Agents never touch issues, merge requests or branches outside this project.
 
 ## §2 Protected paths — what always needs a human
 
@@ -135,6 +143,7 @@ record of what happened; nothing is deleted.
 ```yaml autopilot-policy
 autopilot_policy: 1
 scope_label: autopilot
+freeze_after: "2026-10-27T13:00:00Z"   # §1.3 — no automatic change after this instant (UTC)
 labels:
   approved: "autopilot::approved"
   needs_human: "autopilot::needs-human"

@@ -17,7 +17,8 @@ def test_bump_patch():
 
 
 def test_bump_patch_on_real_init():
-    text, old, new = demo.bump_patch((Path(__file__).resolve().parent.parent / "pulse" / "__init__.py").read_text())
+    init = Path(__file__).resolve().parent.parent / "pulse" / "__init__.py"
+    text, old, new = demo.bump_patch(init.read_text(encoding="utf-8"))
     assert text.count(new) == 1 and old != new
 
 

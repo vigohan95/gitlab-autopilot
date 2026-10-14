@@ -7,7 +7,7 @@ change set against it. Used by:
 * ``automerge.py`` before it merges
 * unit tests (``--files``)
 
-Exit status 0 = auto-merge allowed, 2 = human required, 1 = error.
+Exit status 0 = auto-merge allowed, 2 = human required, 3 = frozen for judging (§1.3), 1 = error.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 import yaml
@@ -40,6 +41,35 @@ def load_policy(path: Path = POLICY_FILE) -> dict:
     return policy
 
 
+def freeze_after(policy: dict) -> datetime | None:
+    """§1.3: the instant after which Autopilot makes no automatic change (None = no freeze)."""
+    raw = policy.get("freeze_after")
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw
+    else:
+        dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def is_frozen(policy: dict, now: datetime | None = None) -> bool:
+    cutoff = freeze_after(policy)
+    return bool(cutoff) and (now or datetime.now(UTC)) >= cutoff
+
+
+def freeze_note(policy: dict) -> str:
+    """The one polite note Autopilot leaves after the freeze (§1.3)."""
+    cutoff = freeze_after(policy)
+    when = cutoff.strftime("%Y-%m-%d %H:%M UTC") if cutoff else "the freeze"
+    return (
+        "**Autopilot is frozen for judging.** Thank you for the issue/merge request — since "
+        f"{when} (AUTOPILOT §1.3, the hackathon deadline) Autopilot plans, changes and merges nothing. "
+        "Everything stays as you left it; a human will pick it up after judging, or the freeze is lifted by "
+        "editing `AUTOPILOT.md`.\n\nautopilot: rules=[§1.3]"
+    )
+
+
 @dataclass
 class Decision:
     allowed: bool
@@ -47,8 +77,12 @@ class Decision:
     satisfied: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
 
+    @property
+    def frozen(self) -> bool:
+        return "§1.3" in self.violated
+
     def as_markdown(self) -> str:
-        verdict = "auto-merge allowed" if self.allowed else "human required"
+        verdict = "auto-merge allowed" if self.allowed else ("frozen for judging" if self.frozen else "human required")
         lines = [f"**Autopilot policy check: {verdict}**", ""]
         for r in self.reasons:
             lines.append(f"- {r}")
@@ -100,10 +134,21 @@ def evaluate(
     dependency_changes: list[tuple[str, str]] | None = None,
     draft: bool = False,
     has_conflicts: bool = False,
+    now: datetime | None = None,
 ) -> Decision:
     labels = labels or []
     d = Decision(allowed=True)
     human_ok = policy["labels"]["human_approved"] in labels
+
+    if is_frozen(policy, now):
+        d.allowed = False
+        d.violated.append("§1.3")
+        d.reasons.append(
+            f"§1.3 frozen for judging since {freeze_after(policy).isoformat()}: no automatic change, "
+            "nothing else is evaluated"
+        )
+        return d
+    d.satisfied.append("§1.3")
 
     if policy["scope_label"] not in labels:
         d.allowed = False
@@ -198,9 +243,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lines", type=int, default=0)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--comment", action="store_true", help="post the decision as an MR note (needs AUTOPILOT_TOKEN)")
+    ap.add_argument(
+        "--freeze-check",
+        action="store_true",
+        help="print FROZEN plus the §1.3 note (exit 3) or OPEN (exit 0); used by the Planner flow before it plans",
+    )
+    ap.add_argument("--issue", type=int, help="with --freeze-check --comment: post the §1.3 note on this issue")
     args = ap.parse_args(argv)
 
     policy = load_policy()
+    if args.freeze_check:
+        if not is_frozen(policy):
+            print(f"OPEN (freeze_after={policy.get('freeze_after')})")
+            return 0
+        note = freeze_note(policy)
+        print("FROZEN\n" + note)
+        if args.comment and args.issue and os.environ.get("AUTOPILOT_TOKEN"):
+            from gitlab_api import GitLab
+
+            GitLab().issue_note(args.issue, note)
+        return 3
     if args.mr:
         try:
             decision = evaluate_mr(policy, args.mr)
@@ -215,10 +277,15 @@ def main(argv: list[str] | None = None) -> int:
         from gitlab_api import GitLab
 
         gl = GitLab()
+        if decision.frozen:
+            gl.mr_note(args.mr, freeze_note(policy))  # §1.3: one polite note, no label, no other change
+            return 3
         gl.mr_note(args.mr, decision.as_markdown())
         # §3.2: when no reviewer agent is enabled, the policy check is the reviewer of record.
         label = policy["labels"]["approved"] if decision.allowed else policy["labels"]["needs_human"]
         gl.add_labels("merge_requests", args.mr, [label])
+    if decision.frozen:
+        return 3
     return 0 if decision.allowed else 2
 
 

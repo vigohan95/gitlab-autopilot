@@ -61,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
 
     policy = load_policy()
     decision = evaluate_mr(policy, args.mr)
+    if decision.frozen:  # §1.3: policy-check already left the one note; change nothing
+        print(decision.as_markdown())
+        return 0
     mr = gl.get(f"merge_requests/{args.mr}")
     approvals = gl.get(f"merge_requests/{args.mr}/approvals")
     approved_by = [a["user"]["username"] for a in approvals.get("approved_by", [])]
