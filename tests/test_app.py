@@ -115,6 +115,19 @@ def test_summary_distinguishes_uptime_24h_from_overall(client):
     assert flaky["checks"] == 4
 
 
+def test_metrics_export_overall_and_24h_uptime_gauges(client):
+    """/metrics exposes the same two uptime numbers as /api/summary; a site with no checks has no uptime series."""
+    _seed_flaky(client)
+    client.post("/api/sites", json={"name": "empty", "url": "https://empty.test/"})
+    text = client.get("/metrics").text
+    assert "# TYPE pulse_site_uptime_pct gauge" in text
+    assert "# TYPE pulse_site_uptime_24h_pct gauge" in text
+    assert 'pulse_site_uptime_pct{site="flaky"} 75.0' in text
+    assert 'pulse_site_uptime_24h_pct{site="flaky"} 100.0' in text
+    assert 'pulse_site_uptime_pct{site="empty"}' not in text
+    assert 'pulse_site_uptime_24h_pct{site="empty"}' not in text
+
+
 def test_status_page_uptime_cells_in_column_order(client):
     _seed_flaky(client)
     page = client.get("/")

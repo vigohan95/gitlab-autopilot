@@ -163,6 +163,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "# TYPE pulse_site_latency_p50_ms gauge",
             "# HELP pulse_site_latency_p95_ms 95th percentile (p95) latency of recent successful probes.",
             "# TYPE pulse_site_latency_p95_ms gauge",
+            "# HELP pulse_site_uptime_pct Percentage of successful probes among the last 100 checks.",
+            "# TYPE pulse_site_uptime_pct gauge",
+            "# HELP pulse_site_uptime_24h_pct Percentage of successful probes in the last 24 hours.",
+            "# TYPE pulse_site_uptime_24h_pct gauge",
             "# HELP pulse_info Build information.",
             "# TYPE pulse_info gauge",
             f'pulse_info{{version="{request.app.state.settings.version}"}} 1',
@@ -177,6 +181,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 lines.append(f"pulse_site_latency_p50_ms{{{label}}} {row['p50_latency_ms']}")
             if row["p95_latency_ms"] is not None:
                 lines.append(f"pulse_site_latency_p95_ms{{{label}}} {row['p95_latency_ms']}")
+            if row["uptime_pct"] is not None:
+                lines.append(f"pulse_site_uptime_pct{{{label}}} {row['uptime_pct']}")
+            if row["uptime_24h_pct"] is not None:
+                lines.append(f"pulse_site_uptime_24h_pct{{{label}}} {row['uptime_24h_pct']}")
         return "\n".join(lines) + "\n"
 
     @app.get("/", response_class=HTMLResponse)
