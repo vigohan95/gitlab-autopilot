@@ -143,7 +143,7 @@ query-string form below: `…/status/503?probe=` + `/healthz` → `…/status/50
 |---|---|---|
 | +0 | Scheduled pipeline with jobs `monitor` and `incident` only. No scanner runs on a schedule (`.gitlab-ci.yml` workflow rules; `tests/test_ci_rules.py`). On 2026-10-14 `gemnasium-python-dependency_scanning` still ran here too (drill finding 4, fixed since). | pipeline URL |
 | +2 min | **`monitor` red** after 5 attempts × 20 s: the log and `monitor-report.json` show `production` `/healthz→503`, `/version→503`. | `monitor` job URL |
-| +3 min | **`incident` job** runs (`when: on_failure`): opens **Monitor > Incidents** → "Production unhealthy: production (…)" with the report, labels `autopilot`, `incident`, `env::production`, an *Automatic remediation* line (see "The rollback step" below) and `autopilot: rules=[§6.1, §6.2, §6.3]`. It also tries to clear the chaos switch (nothing to clear — no Render key). **Expected in the showcase since release v0.1.3 (2026-10-16, drill run 6):** the `incident` log prints "rollback target: v0.1.2 (`/version` did not answer; production's last successful deployment (#…, `main` at `<sha>`, the commit of release `v0.1.3`) is `v0.1.3`; `v0.1.2` is the newest release older than that)", the incident description has the same "Rollback target" line, and a note follows: "Rollback to `v0.1.2` started on `rollback/v0.1.2/incident-<iid>`: <pipeline URL>" (see "The rollback step", step 3). Before v0.1.3 existed, production ran on a plain `main` commit and the expected text was "**No automatic rollback:** … is not a release. A human must roll back." https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/incidents | incident URL, `incident` job log (it prints `rollback target: …`) |
+| +3 min | **`incident` job** runs (`when: on_failure`): opens **Monitor > Incidents** → "Production unhealthy: production (…)" with the report, labels `autopilot`, `incident`, `env::production`, an *Automatic remediation* line (see "The rollback step" below) and `autopilot: rules=[§6.1, §6.2, §6.3]`. It also tries to clear the chaos switch (nothing to clear — no Render key). **Seen live on 2026-10-16 (drill run 6, Incident #6, rollback pipeline 2954357168):** the `incident` log prints "rollback target: v0.1.2 (`/version` did not answer; production's last successful deployment (#…, `main` at `<sha>`, the commit of release `v0.1.3`) is `v0.1.3`; `v0.1.2` is the newest release older than that)", the incident description has the same "Rollback target" line, and a note follows: "Rollback to `v0.1.2` started on `rollback/v0.1.2/incident-<iid>`: <pipeline URL>" (see "The rollback step", step 3). Before v0.1.3 existed, production ran on a plain `main` commit and the text was "**No automatic rollback:** … is not a release. A human must roll back." Since the 10-16 rollback, production's newest deployment is the `rollback/v0.1.2/incident-6` ref, so the deployed release is `v0.1.2`, the oldest: until a newer release is deployed the text is "**No automatic rollback:** … no older release exists. A human must roll back.", which is correct (M2.5). https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase/-/incidents | incident URL, `incident` job log (it prints `rollback target: …`) |
 | +3 min | Pipeline **failed** → T4 starts **f4-incident-responder** (triage MONITOR → responder) and T3 starts **f3-security-fixer** (triage MONITOR → ends). | AI > Sessions → both ids |
 | +5–9 min | F4 posts the **RCA note** on the incident with headings Impact / Timeline (UTC) / Root cause / Remediation (automatic) / Follow-ups for humans / Evidence, ending `autopilot: rules=[section 6.1, section 6.2, section 6.3]`, and adds the label `rca::done`. Expected root cause: the production endpoint answers 503 on both probes (not the chaos switch — the note should say "503 from httpbin", i.e. the configured URL is down/misconfigured). The incident **stays open** (§6.3). | RCA note URL |
 
@@ -176,10 +176,14 @@ release, and production was already built on it. The job then started the rollba
 variables", and the incident got "Automatic rollback could NOT be started … A human must roll back." F4's RCA added
 that a rollback to `v0.1.2` would not have changed anything, because the probe URL was the fault. Both are fixed: the
 rollback runs on the branch with no variables, and the target is never the release already deployed. Replayed
-against the drill, the job now picks no target and starts no pipeline (`tests/test_rollback.py`). Until 2026-10-16 the branch path
-had not run in a live incident: the showcase had one release and production was deployed from a later `main` commit, so no
-target existed. Release v0.1.3 (drill run 6) put production on a release commit with `v0.1.2` below it; the first live
-run of the branch path is the next M2 drill.
+against the drill, the job now picks no target and starts no pipeline (`tests/test_rollback.py`).
+
+**What happened on 2026-10-16** (drill run 6). Release v0.1.3 put production on a release commit with `v0.1.2` below
+it, then the same outage was played. The `incident` job opened Incident #6 at 08:53:14, resolved `v0.1.3` → `v0.1.2`
+from the Deployments API, created `rollback/v0.1.2/incident-6` and started pipeline 2954357168 on it with no
+variables (accepted, where the 10-14 call was refused). `deploy-production` succeeded at 08:54:52: 2 min 8 s after
+the monitor failed, 1 min 38 s after the incident opened, with no human touch after the schedule was played. F4
+posted the RCA at 08:54:46; F1 started on the incident and skipped it (no branch, no MR).
 
 ### M2.4 Restore (1 min)
 
@@ -198,15 +202,18 @@ Send Claude: the scheduled pipeline URL, the incident URL, the F4 session id, th
 - No F4 session: AI > Triggers — T4 enabled, event *Pipeline events → Failed*, flow `f4-incident-responder`; the
   schedule owner must be you (Take ownership, run again).
 - The monitor is green: the variable did not reach the job (protected flag on? wrong scope?) — fix and run again.
-- The incident says "No automatic rollback": since release v0.1.3 this is a finding, not the expected state (production
-  was deployed from the v0.1.3 commit by its `main` pipeline, so the target must be `v0.1.2`). Read the reason it gives:
-  "deployments could not be read" means the Deployments API refused `AUTOPILOT_TOKEN`; "is not a release" means a later
-  push to `main` redeployed production after v0.1.3 (push nothing to `main` between the release and the drill). Then
-  roll back by hand (step 4) and record the finding.
+- The incident says "No automatic rollback": read the reason it gives. "no older release exists" is the expected
+  state right after a rollback drill: the 10-16 rollback left production's newest deployment on
+  `rollback/v0.1.2/incident-6`, so the deployed release is `v0.1.2` and nothing is below it. For another live
+  rollback, cut a new release first (push a `pulse.__version__` bump to `main`, as run 6 did) and play the outage
+  after its `deploy-production` has finished. The other two reasons are findings: "deployments could not be read"
+  means the Deployments API refused `AUTOPILOT_TOKEN`; "is not a release" means a later push to `main` redeployed
+  production after the release (push nothing to `main` between the release and the drill). Then roll back by hand
+  (step 4) and record the finding.
 
 ---
 
 ## After both: what Claude does with the links
 
 Row 0b (security loop) and row 0c (incident loop) in the README judges' table, the "Executed for real" paragraph, the
-Devpost About text (`DEVPOST-ABOUT-v3.md`), and `.gitlab/duo/triggers.md` status. No video is re-recorded.
+Devpost About text (`DEVPOST-ABOUT-v4.md`), and `.gitlab/duo/triggers.md` status. No video is re-recorded.
