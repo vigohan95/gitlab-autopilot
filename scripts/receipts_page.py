@@ -20,7 +20,10 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from gitlab_api import GitLab, warn
+try:
+    from .gitlab_api import GitLab, warn
+except ImportError:
+    from gitlab_api import GitLab, warn
 
 _LEAD = re.compile(r"\*\*Lead time:\*\*.*?= \*\*(.+?)\*\*")
 _TOUCH = re.compile(r"\*\*Human actions after filing:\*\* \*\*(\d+)\*\*")

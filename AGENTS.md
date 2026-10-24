@@ -15,7 +15,8 @@ agents, triggers).
 
 - `pulse/` — the service: `app.py` (FastAPI routes), `store.py` (SQLite), `probe.py` (HTTP probes), `__main__.py` (uvicorn entry). Version in `pulse/__init__.py`.
 - `tests/` — pytest; `conftest.py` routes outbound probes through `httpx.MockTransport`. Never call real networks in tests.
-- `scripts/` — CI helpers (policy engine, monitor, incident, deploy, auto-merge, journey card). Plain Python 3.11+, only `httpx`, `pyyaml`, `huggingface_hub`.
+- `scripts/` — CI helpers (policy engine, monitor, incident, deploy, auto-merge, journey card). Plain Python 3.11+, only `httpx`, `pyyaml`, `huggingface_hub`. Also published as the `gitlab_autopilot` package (`pip install gitlab-autopilot`); every module must keep working as `python scripts/<name>.py` and as `gitlab_autopilot.<name>` (relative import first, top-level fallback).
+- `templates/` — the CI include and starter policy other projects copy; nothing repository-specific goes in here.
 - `mcp_server/` — read-only MCP server (`pulse_mcp.py`).
 - `.gitlab/duo/` — flow and agent definitions, triggers, MCP and agent config.
 

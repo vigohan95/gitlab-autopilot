@@ -65,8 +65,12 @@ def shell_exports(env: Mapping[str, str] | None = None) -> str:
     return f"export ROLLBACK_TO={shlex.quote(tag)} INCIDENT_IID={shlex.quote(iid)}"
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> int:  # noqa: ARG001 - no options; eval "$(autopilot-rollback-ref)"
     out = shell_exports()
     if out:
         print(out)
-    sys.exit(0)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

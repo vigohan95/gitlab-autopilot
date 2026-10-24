@@ -14,6 +14,7 @@ Outputs (file)   : RELEASE_NOTES.md
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import shutil
@@ -22,10 +23,34 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+# the project being released: the CI checkout, else the current directory (local use)
+REPO = Path(os.environ.get("CI_PROJECT_DIR") or Path.cwd())
 
-from pulse import __version__  # noqa: E402
+
+def project_version() -> str:
+    """The version to release, in order: ``--version`` / ``AUTOPILOT_VERSION``, a ``VERSION`` file in the project,
+    the ``pulse`` sample app of this repository, this package's own version."""
+    env = os.environ.get("AUTOPILOT_VERSION")
+    if env:
+        return env.strip()
+    vf = REPO / "VERSION"
+    if vf.exists():
+        return vf.read_text(encoding="utf-8").strip()
+    try:
+        sys.path.insert(0, str(REPO))
+        from pulse import __version__ as app_version
+
+        return app_version
+    except ImportError:
+        pass
+    try:
+        from . import __version__ as own_version
+    except ImportError:
+        from __init__ import __version__ as own_version  # scripts/ on sys.path
+    return own_version
+
+
+__version__ = project_version()  # the version this checkout would release (kept for callers that read it)
 
 MR_RE = re.compile(r"!(\d+)")
 ISSUE_RE = re.compile(r"#(\d+)")
@@ -35,7 +60,7 @@ ISSUE_RE = re.compile(r"#(\d+)")
 def _git(*args: str) -> str:
     if not shutil.which("git"):
         return ""
-    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip()  # noqa: S607
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True, check=False).stdout.strip()  # noqa: S607
 
 
 def _git_tags() -> list[str]:
@@ -113,8 +138,11 @@ def decide(tags: list[str], version: str) -> tuple[str, bool, str | None]:
     return tag, not exists, (others[0] if others else None)
 
 
-def main() -> int:
-    version = __version__
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--version", help="version to release (default: AUTOPILOT_VERSION, VERSION file, pulse, own)")
+    args = ap.parse_args(argv if argv is not None else [])
+    version = args.version or project_version()
     in_ci = bool(os.environ.get("CI_PROJECT_ID"))
     sha = os.environ.get("CI_COMMIT_SHA", "HEAD")
     source = "gitlab-api" if in_ci else "git"
@@ -138,5 +166,10 @@ def main() -> int:
     return 0
 
 
+def cli() -> int:
+    """Console entry point (``autopilot-release-notes``) and ``python scripts/release_notes.py``."""
+    return main(sys.argv[1:])
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli())

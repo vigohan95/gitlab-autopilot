@@ -1,0 +1,218 @@
+# gitlab-autopilot — CI template. One include adds the policy gate, auto-merge, journey card, scheduled
+# monitor, incident + rollback and the audit trail to your pipeline. Your own build, test and deploy jobs stay yours.
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/vigohan95/gitlab-autopilot/v0.2.0/templates/Autopilot.gitlab-ci.yml
+#
+# Then: copy templates/AUTOPILOT.md to the root of your project and edit the yaml block (protected paths, limits);
+# add the CI/CD variable AUTOPILOT_TOKEN (project access token, scope api, role Maintainer, masked, not protected);
+# label an issue `autopilot` or an MR `autopilot`. docs/QUICKSTART.md walks through it in five minutes.
+#
+# Every job here lives in the reserved `.pre` / `.post` stages, so you do not have to touch your `stages:` list.
+# auto-merge runs in `.post`, i.e. after every job of the MR pipeline; it also sets "merge when pipeline succeeds",
+# so a red job anywhere still blocks the merge (AUTOPILOT §3.1).
+#
+# Jobs                     when                          what
+#   autopilot:version        MR + default branch         RELEASE_NOTES.md, version.env (VERSION, RELEASE_TAG, RELEASE_NEEDED, PREVIOUS_TAG)
+#   autopilot:policy-check   MR                          evaluates the diff against AUTOPILOT.md, comments, labels approved / needs-human
+#   autopilot:review-approve MR labelled autopilot       waits for the reviewer agent's verdict note (Duo; harmless without it)
+#   autopilot:auto-merge     MR labelled autopilot       merges when §3 holds (green, verdict, no new High/Critical, no open review threads)
+#   autopilot:journey-card   default branch              posts lead time / human touches / CI footprint on the originating issue, closes it
+#   autopilot:receipts       default branch              GitLab Pages table of every journey (login-free)
+#   autopilot:monitor        schedule                    probes AUTOPILOT_MONITOR_TARGETS (name=url ...)
+#   autopilot:incident       schedule, monitor red       opens a GitLab Incident and starts the rollback pipeline on rollback/<tag>/incident-<iid>
+#   autopilot:rollback-note  rollback pipelines          writes the outcome on the incident
+#   autopilot:audit-trail    MR, default branch, rollback pipeline facts kept one year
+#
+# Variables (set in Settings > CI/CD > Variables or override in your .gitlab-ci.yml)
+#   AUTOPILOT_TOKEN            required for anything that writes to GitLab (notes, labels, merges, incidents)
+#   AUTOPILOT_MONITOR_TARGETS  "production=https://... staging=https://..." for the scheduled monitor
+#   AUTOPILOT_VERSION          package version to install (pinned here to the template's own release)
+#   AUTOPILOT_PYTHON_IMAGE     image for the Autopilot jobs
+#   AUTOPILOT_F2_CONSUMER_ID   optional: the reviewer flow's consumer id (GitLab Duo Agent Platform)
+#   AUTOPILOT_REVIEW_WAIT      seconds auto-merge waits for Duo Code Review to post (§3.7); 0 disables
+#
+# Conventions the scripts rely on: your production deployment job is named `deploy-production` (the journey card
+# reads its finish time); your rollback pipeline deploys the release named by ROLLBACK_TO, which
+# `eval "$(autopilot-rollback-ref)"` exports from the rollback/<tag>/incident-<iid> branch name (docs/QUICKSTART.md).
+
+variables:
+  AUTOPILOT_VERSION: "0.2.0"
+  AUTOPILOT_PYTHON_IMAGE: "python:3.12-slim"
+  AUTOPILOT_MONITOR_TARGETS: ""
+  AUTOPILOT_REVIEW_WAIT: "300"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+.autopilot:
+  image: $AUTOPILOT_PYTHON_IMAGE
+  interruptible: true
+  before_script:
+    - pip install --quiet "gitlab-autopilot==$AUTOPILOT_VERSION"
+
+.autopilot_rules_app: &autopilot_rules_app
+  - if: $ROLLBACK_TO
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "schedule"
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.autopilot_rules_main: &autopilot_rules_main
+  - if: $ROLLBACK_TO
+    when: never
+  - if: $CI_PIPELINE_SOURCE == "schedule"
+    when: never
+  - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+.autopilot_rules_autopilot_mr: &autopilot_rules_autopilot_mr
+  - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_LABELS =~ /(^|,)autopilot(,|$)/
+
+autopilot:version:
+  stage: .pre
+  extends: .autopilot
+  script:
+    - autopilot-release-notes
+  artifacts:
+    reports:
+      dotenv: version.env
+    paths:
+      - RELEASE_NOTES.md
+    expire_in: 1 week
+  rules: *autopilot_rules_app
+
+autopilot:policy-check:
+  stage: .pre
+  extends: .autopilot
+  script:
+    - autopilot-policy --mr "$CI_MERGE_REQUEST_IID" --comment
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+autopilot:review-approve:
+  stage: .post
+  extends: .autopilot
+  needs: ["autopilot:policy-check"]
+  script:
+    - if [ -n "$AUTOPILOT_F2_CONSUMER_ID" ]; then WAIT=600; else WAIT=0; fi
+    - autopilot-review-approve --mr "$CI_MERGE_REQUEST_IID" --wait "$WAIT" --interval 30
+  allow_failure: true
+  rules: *autopilot_rules_autopilot_mr
+
+autopilot:auto-merge:
+  stage: .post
+  extends: .autopilot
+  needs: ["autopilot:policy-check", "autopilot:review-approve"]
+  script:
+    - autopilot-automerge --mr "$CI_MERGE_REQUEST_IID" --review-wait "$AUTOPILOT_REVIEW_WAIT"
+  rules: *autopilot_rules_autopilot_mr
+
+autopilot:journey-card:
+  stage: .post
+  extends: .autopilot
+  needs:
+    - job: deploy-production
+      optional: true
+  script:
+    - autopilot-sci --pipeline "$CI_PIPELINE_ID" --out sci.json
+    - autopilot-journey-card --close
+  artifacts:
+    paths:
+      - journey-card.md
+      - sci.json
+    expire_in: 1 month
+  rules: *autopilot_rules_main
+
+autopilot:receipts:
+  stage: .post
+  extends: .autopilot
+  needs: ["autopilot:journey-card"]
+  script:
+    - autopilot-receipts --out public
+  artifacts:
+    paths:
+      - public
+    expire_in: 1 month
+  rules: *autopilot_rules_main
+
+autopilot:monitor:
+  stage: .pre
+  extends: .autopilot
+  script:
+    - |
+      ARGS=""
+      for t in $AUTOPILOT_MONITOR_TARGETS; do ARGS="$ARGS --target $t"; done
+      if [ -z "$ARGS" ]; then echo "AUTOPILOT_MONITOR_TARGETS is empty; nothing to probe"; exit 0; fi
+      autopilot-monitor $ARGS --retries 5 --backoff 20
+  artifacts:
+    when: always
+    paths:
+      - monitor-report.json
+    expire_in: 1 month
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+autopilot:incident:
+  stage: .post
+  extends: .autopilot
+  needs:
+    - job: autopilot:monitor
+      artifacts: true
+  when: on_failure
+  script:
+    - autopilot-incident
+  artifacts:
+    when: always
+    reports:
+      dotenv: incident.env
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+autopilot:rollback-note:
+  stage: .post
+  extends: .autopilot
+  needs:
+    - job: deploy-production
+      optional: true
+  script:
+    - |
+      eval "$(autopilot-rollback-ref)"
+      python - <<'PY'
+      import os
+      from gitlab_autopilot.gitlab_api import GitLab
+      tag, iid = os.environ.get("ROLLBACK_TO", ""), os.environ.get("INCIDENT_IID", "")
+      gl = GitLab()
+      if iid and gl.can_write:
+          gl.issue_note(int(iid), f"Rollback to `{tag}` deployed: {os.environ['CI_PIPELINE_URL']}\n\nautopilot: rules=[§5.2, §6.2]")
+          print("incident updated")
+      else:
+          print("no incident to update")
+      PY
+  rules:
+    - if: $ROLLBACK_TO
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/
+
+autopilot:audit-trail:
+  stage: .post
+  extends: .autopilot
+  when: always
+  script:
+    - |
+      python - <<'PY'
+      import json, os
+      keys = ["CI_PIPELINE_ID", "CI_PIPELINE_SOURCE", "CI_COMMIT_SHA", "CI_COMMIT_REF_NAME", "CI_MERGE_REQUEST_IID",
+              "CI_MERGE_REQUEST_LABELS", "GITLAB_USER_LOGIN", "ROLLBACK_TO", "INCIDENT_IID", "VERSION", "RELEASE_NEEDED"]
+      os.makedirs("audit", exist_ok=True)
+      json.dump({k: os.environ.get(k, "") for k in keys}, open("audit/pipeline.json", "w"), indent=2)
+      print(open("audit/pipeline.json").read())
+      PY
+  artifacts:
+    paths:
+      - audit/
+    expire_in: 1 year
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $ROLLBACK_TO
+    - if: $CI_COMMIT_BRANCH =~ /^rollback\/v[0-9]/

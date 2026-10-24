@@ -3,11 +3,16 @@
     "pulse-readonly": {
       "type": "stdio",
       "command": "python",
-      "args": ["-m", "mcp_server.pulse_mcp", "--transport", "stdio"],
+      "args": [
+        "-m",
+        "mcp_server.pulse_mcp",
+        "--transport",
+        "stdio"
+      ],
       "env": {
-        "PULSE_ENV_STAGING_URL": "https://pulse-staging-yy2c.onrender.com",
-        "PULSE_ENV_PRODUCTION_URL": "https://pulse-prod-z0fn.onrender.com",
-        "PULSE_GITLAB_PROJECT": "hanwg666/gitlab-autopilot"
+        "PULSE_ENV_STAGING_URL": "https://staging.example.com",
+        "PULSE_ENV_PRODUCTION_URL": "https://production.example.com",
+        "PULSE_GITLAB_PROJECT": "<group>/<project>"
       },
       "approvedTools": true
     }

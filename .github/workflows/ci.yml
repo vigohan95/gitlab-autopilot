@@ -1,0 +1,43 @@
+name: CI
+# Tests and lint on every push and pull request. The GitLab pipeline (.gitlab-ci.yml) stays the operating
+# pipeline; this is the badge and the safety net for contributions that arrive on GitHub.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install --disable-pip-version-check -r requirements-dev.txt
+      - run: ruff format --check . && ruff check .
+      - run: python -m pytest -q --cov --cov-report=term
+      - run: python scripts/check_ci_schema.py .gitlab-ci.yml && python scripts/check_ci_schema.py templates/Autopilot.gitlab-ci.yml
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install --disable-pip-version-check build twine
+      - run: python -m build && twine check dist/*
+      - name: Install the wheel and run the entry points
+        run: |
+          pip install dist/*.whl
+          autopilot-policy --help >/dev/null
+          autopilot-release-notes --help >/dev/null
+          cd /tmp && cp "$GITHUB_WORKSPACE/templates/AUTOPILOT.md" . && autopilot-policy --files README.md --json

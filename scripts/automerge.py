@@ -16,9 +16,14 @@ import os
 import sys
 import time
 
-from gitlab_api import GitLab, warn
-from policy import evaluate_mr, load_policy
-from review_approve import parse_verdict
+try:  # installed as gitlab_autopilot.*
+    from .gitlab_api import GitLab, warn
+    from .policy import evaluate_mr, load_policy
+    from .review_approve import parse_verdict
+except ImportError:  # run as scripts/automerge.py
+    from gitlab_api import GitLab, warn
+    from policy import evaluate_mr, load_policy
+    from review_approve import parse_verdict
 
 
 def finding_key(v: dict) -> str:

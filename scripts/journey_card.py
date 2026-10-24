@@ -20,8 +20,12 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import sci
-from gitlab_api import GitLab, warn
+try:
+    from . import sci
+    from .gitlab_api import GitLab, warn
+except ImportError:
+    import sci
+    from gitlab_api import GitLab, warn
 
 # CI stage -> DevSecOps lifecycle stage
 STAGE_MAP = {

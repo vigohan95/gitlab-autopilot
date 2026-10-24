@@ -30,7 +30,11 @@ import sys
 import time
 
 import httpx
-from gitlab_api import GitLab, warn
+
+try:
+    from .gitlab_api import GitLab, warn
+except ImportError:
+    from gitlab_api import GitLab, warn
 
 VERDICT_RE = re.compile(r"Autopilot review:\s*\**\s*(APPROVED|HUMAN[ -]REQUIRED|NOT-AUTOPILOT)\b", re.I)
 SIGNATURE = "autopilot: rules="

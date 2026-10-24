@@ -8,7 +8,7 @@ that judges and reviewers can read it next to the pipeline that uses it.
 | `flows/f1-planner-developer.yaml` … `flows/f5-closer.yaml` | 5 custom flows (flow registry v1, `environment: ambient`) | pasted into **AI > Flows > New flow > Configuration** (or **Configuration path** when the `ai_catalog_create_third_party_flows` flag is on) |
 | `agents/*.yaml` | 4 custom agents (display name, description, system prompt, tools) | typed into **AI > Agents > New agent** — agents have no file format, the YAML here is the archive of the form fields |
 | `triggers.md` | the 5 flow triggers (event → flow → service account) | **AI > Triggers > New flow trigger** |
-| `mcp.json` | MCP client config for the read-only `pulse-readonly` server | read by IDE / Duo CLI; AI Catalog registration for UI flows is in `triggers.md` §MCP |
+| `mcp.json` | MCP client config for the read-only `pulse-readonly` server (the `env` URLs and project path are placeholders: put your deployment's values in) | read by IDE / Duo CLI; AI Catalog registration for UI flows is in `triggers.md` §MCP |
 | `agent-config.yml` | execution environment for flows run as CI jobs (`setup_script`, cache) | read from the default branch automatically |
 | `mr-review-instructions.yaml` | custom instructions for the Code Review foundational flow | read automatically |
 | `../issue_templates/autopilot.md` | issue template that carries the `autopilot` label | **New issue > Choose a template** |

@@ -35,8 +35,12 @@ import os
 import sys
 from pathlib import Path
 
-import rollback_ref
-from gitlab_api import GitLab, warn
+try:
+    from . import rollback_ref
+    from .gitlab_api import GitLab, warn
+except ImportError:
+    import rollback_ref
+    from gitlab_api import GitLab, warn
 
 INCIDENT_LABELS = ["autopilot", "incident", "env::production"]
 REUSE_WINDOW_HOURS = 2

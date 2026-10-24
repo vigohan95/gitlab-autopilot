@@ -25,12 +25,25 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-POLICY_FILE = ROOT / "AUTOPILOT.md"
+
+
+def default_policy_file() -> Path:
+    """Where AUTOPILOT.md is: ``AUTOPILOT_POLICY_FILE`` if set, else the current directory (the project checkout in
+    a CI job, whichever way the package was installed), else next to this checkout (local development)."""
+    env = os.environ.get("AUTOPILOT_POLICY_FILE")
+    if env:
+        return Path(env)
+    here = Path.cwd() / "AUTOPILOT.md"
+    return here if here.exists() else ROOT / "AUTOPILOT.md"
+
+
+POLICY_FILE = default_policy_file()
 _BLOCK = re.compile(r"```yaml autopilot-policy\n(.*?)```", re.S)
 _REQ_LINE = re.compile(r"^\s*([A-Za-z0-9_.\-\[\]]+)\s*==\s*([0-9][^\s;#]*)")
 
 
-def load_policy(path: Path = POLICY_FILE) -> dict:
+def load_policy(path: Path | None = None) -> dict:
+    path = path or default_policy_file()
     text = path.read_text(encoding="utf-8")
     m = _BLOCK.search(text)
     if not m:
@@ -259,7 +272,10 @@ def main(argv: list[str] | None = None) -> int:
         note = freeze_note(policy)
         print("FROZEN\n" + note)
         if args.comment and args.issue and os.environ.get("AUTOPILOT_TOKEN"):
-            from gitlab_api import GitLab
+            try:
+                from .gitlab_api import GitLab
+            except ImportError:
+                from gitlab_api import GitLab
 
             GitLab().issue_note(args.issue, note)
         return 3
@@ -274,7 +290,12 @@ def main(argv: list[str] | None = None) -> int:
 
     print(json.dumps(decision.__dict__, indent=2) if args.json else decision.as_markdown())
     if args.comment and args.mr and os.environ.get("AUTOPILOT_TOKEN"):
-        from gitlab_api import GitLab
+        try:
+            from .gitlab_api import GitLab
+            from .review_approve import parse_verdict
+        except ImportError:
+            from gitlab_api import GitLab
+            from review_approve import parse_verdict
 
         gl = GitLab()
         if decision.frozen:
@@ -284,8 +305,6 @@ def main(argv: list[str] | None = None) -> int:
         # §3.2: when no reviewer agent is enabled, the policy check is the reviewer of record. The two labels are
         # scoped (autopilot::), so adding "approved" would silently drop a reviewer agent's "needs-human";
         # never do that over a reviewer verdict that is not APPROVED (2026-10-14 drill).
-        from review_approve import parse_verdict
-
         try:
             verdict, _ = parse_verdict(gl.get_all(f"merge_requests/{args.mr}/notes"))
         except Exception:  # noqa: BLE001

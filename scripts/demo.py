@@ -27,7 +27,10 @@ import sys
 import time
 from datetime import UTC, datetime
 
-from gitlab_api import GitLab
+try:
+    from .gitlab_api import GitLab
+except ImportError:
+    from gitlab_api import GitLab
 
 LABELS = {
     "autopilot": "#1f75cb",

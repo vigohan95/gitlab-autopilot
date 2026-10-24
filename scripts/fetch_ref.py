@@ -18,7 +18,10 @@ import sys
 import tarfile
 from pathlib import Path
 
-from gitlab_api import GitLab
+try:
+    from .gitlab_api import GitLab
+except ImportError:
+    from gitlab_api import GitLab
 
 
 def extract_paths(archive: bytes, paths: list[str], dest: Path) -> list[str]:

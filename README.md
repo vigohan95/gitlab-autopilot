@@ -7,6 +7,28 @@ scanners find, merge it, package it, release it, promote it from staging to
 production, watch it in production, roll it back if it breaks, and write the
 story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 
+[![CI](https://github.com/vigohan95/gitlab-autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/vigohan95/gitlab-autopilot/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/gitlab-autopilot.svg)](https://pypi.org/project/gitlab-autopilot/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
+## Use it in your own project
+
+One include adds the policy gate, auto-merge, the scheduled monitor with incident + automatic rollback, and the
+journey card to any GitLab project. It runs on GitLab Free with hosted runners; GitLab Duo flows are optional.
+
+```yaml
+include:
+  - remote: https://raw.githubusercontent.com/vigohan95/gitlab-autopilot/v0.2.0/templates/Autopilot.gitlab-ci.yml
+```
+
+Then copy [`templates/AUTOPILOT.md`](templates/AUTOPILOT.md) to your project root, add a masked CI/CD variable
+`AUTOPILOT_TOKEN` (project access token, scope `api`), and label a merge request `autopilot`.
+[**docs/QUICKSTART.md**](docs/QUICKSTART.md) walks through it in five minutes, monitor and rollback included.
+The same scripts are on PyPI: `pip install gitlab-autopilot` gives you `autopilot-policy`, `autopilot-automerge`,
+`autopilot-incident`, `autopilot-monitor` and friends (`--help` on each). The rest of this page is the story of
+the project that runs them for real: the judged hackathon project, its live drills, and the policy they enforce.
+
 **Live drills, 2026-10-14 and 2026-10-16 — failures included** (judged project; the full timeline is in
 [`docs/DRILL-2026-10-14.md`](docs/DRILL-2026-10-14.md)). Six live journeys ran in the judged project (rows 0–0f of
 the judges' table), including a live automatic rollback. We ran two failure scenarios on purpose so that the
@@ -279,6 +301,9 @@ reader can see why the agent was allowed to merge, roll back, or stop.
 | repository context | [`AGENTS.md`](AGENTS.md), [`.gitlab/duo/agent-config.yml`](.gitlab/duo/agent-config.yml) | read by Developer and by the custom flows via `context:inputs.user_rule` |
 
 ## Repository layout
+
+- `templates/` — `Autopilot.gitlab-ci.yml` (the one-line include) and `AUTOPILOT.md` (starter policy) for other projects.
+- `scripts/` is also the `gitlab_autopilot` package on PyPI (`pyproject.toml` maps it); each script runs both ways.
 
 ```
 pulse/              the service (FastAPI, SQLite, probes)
