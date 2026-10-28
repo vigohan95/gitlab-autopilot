@@ -8,7 +8,7 @@ production, watch it in production, roll it back if it breaks, and write the
 story back on your issue. Nine DevSecOps stages, zero humans in the loop.
 
 [![CI](https://github.com/vigohan95/gitlab-autopilot/actions/workflows/ci.yml/badge.svg)](https://github.com/vigohan95/gitlab-autopilot/actions/workflows/ci.yml)
-[![PyPI](https://img.shields.io/pypi/v/gitlab-autopilot.svg)](https://pypi.org/project/gitlab-autopilot/)
+[![Release](https://img.shields.io/github/v/release/vigohan95/gitlab-autopilot)](https://github.com/vigohan95/gitlab-autopilot/releases/latest)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
