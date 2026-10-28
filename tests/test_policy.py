@@ -6,6 +6,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 from policy import classify_dependency_diff, evaluate, load_policy  # noqa: E402
 
 POLICY = load_policy()
+# The repository's own policy freezes automation after the judging deadline (§1.3). Rule tests must not depend
+# on today's date, so they evaluate an unfrozen copy; the freeze tests below use POLICY with an explicit `now`.
+RULES = {**POLICY, "freeze_after": None}
 
 
 def test_policy_block_parses_and_has_expected_rules():
@@ -16,37 +19,37 @@ def test_policy_block_parses_and_has_expected_rules():
 
 
 def test_plain_code_change_is_allowed():
-    d = evaluate(POLICY, ["pulse/app.py", "tests/test_app.py"], labels=["autopilot"], changed_lines=120)
+    d = evaluate(RULES, ["pulse/app.py", "tests/test_app.py"], labels=["autopilot"], changed_lines=120)
     assert d.allowed and "§2.1" in d.satisfied and "§1.1" in d.satisfied
     assert d.as_markdown().startswith("**Autopilot policy check: auto-merge allowed**")
     assert "autopilot: rules=[" in d.as_markdown()
 
 
 def test_missing_scope_label_blocks():
-    d = evaluate(POLICY, ["pulse/app.py"], labels=[])
+    d = evaluate(RULES, ["pulse/app.py"], labels=[])
     assert not d.allowed and "§1.1" in d.violated
 
 
 def test_protected_paths_need_human():
-    d = evaluate(POLICY, ["Dockerfile"], labels=["autopilot"])
+    d = evaluate(RULES, ["Dockerfile"], labels=["autopilot"])
     assert not d.allowed and "§2.1" in d.violated
-    d = evaluate(POLICY, [".gitlab/duo/flows/x.yaml"], labels=["autopilot"])
+    d = evaluate(RULES, [".gitlab/duo/flows/x.yaml"], labels=["autopilot"])
     assert not d.allowed and "§2.1" in d.violated
-    d = evaluate(POLICY, [".gitlab-ci.yml"], labels=["autopilot", "autopilot::human-approved"])
+    d = evaluate(RULES, [".gitlab-ci.yml"], labels=["autopilot", "autopilot::human-approved"])
     assert d.allowed and "§2.1" in d.satisfied
 
 
 def test_size_limits():
-    d = evaluate(POLICY, ["pulse/app.py"], labels=["autopilot"], changed_lines=401)
+    d = evaluate(RULES, ["pulse/app.py"], labels=["autopilot"], changed_lines=401)
     assert not d.allowed and "§3.4" in d.violated
     many = [f"pulse/f{i}.py" for i in range(21)]
-    d = evaluate(POLICY, many, labels=["autopilot"], changed_lines=10)
+    d = evaluate(RULES, many, labels=["autopilot"], changed_lines=10)
     assert not d.allowed and "§3.4" in d.violated
 
 
 def test_draft_or_conflicts_block():
-    assert not evaluate(POLICY, ["pulse/app.py"], labels=["autopilot"], draft=True).allowed
-    assert not evaluate(POLICY, ["pulse/app.py"], labels=["autopilot"], has_conflicts=True).allowed
+    assert not evaluate(RULES, ["pulse/app.py"], labels=["autopilot"], draft=True).allowed
+    assert not evaluate(RULES, ["pulse/app.py"], labels=["autopilot"], has_conflicts=True).allowed
 
 
 def test_dependency_bump_classification():
@@ -57,12 +60,12 @@ def test_dependency_bump_classification():
 
 
 def test_dependency_rules():
-    d = evaluate(POLICY, ["requirements.txt"], labels=["autopilot"], dependency_changes=[("fastapi", "patch")])
+    d = evaluate(RULES, ["requirements.txt"], labels=["autopilot"], dependency_changes=[("fastapi", "patch")])
     assert d.allowed and "§2.2" in d.satisfied
-    d = evaluate(POLICY, ["requirements.txt"], labels=["autopilot"], dependency_changes=[("httpx", "major")])
+    d = evaluate(RULES, ["requirements.txt"], labels=["autopilot"], dependency_changes=[("httpx", "major")])
     assert not d.allowed and "§2.2" in d.violated
     d = evaluate(
-        POLICY,
+        RULES,
         ["requirements.txt"],
         labels=["autopilot", "autopilot::human-approved"],
         dependency_changes=[("httpx", "major")],

@@ -1,8 +1,9 @@
 name: Mirror to GitLab
-# Pushes every commit on main to the GitLab project that runs the Autopilot pipeline.
-# Secrets: GITLAB_TOKEN (GitLab project access token, scope write_repository, role Developer+), optionally
-# GITLAB_SHOWCASE_TOKEN for a second project. Repository variables (Settings > Variables) override the targets:
-# GITLAB_MIRROR_URL and GITLAB_SHOWCASE_URL (https URLs of the .git repositories). Forks: set your own.
+# Optional: pushes every commit on main to a GitLab project that runs the Autopilot pipeline.
+# Opt-in. Nothing is pushed unless BOTH the repository variable and the secret for a target are set:
+#   GITLAB_MIRROR_URL   + secret GITLAB_TOKEN           (https URL of the .git repository; pushed with ci.skip)
+#   GITLAB_SHOWCASE_URL + secret GITLAB_SHOWCASE_TOKEN  (a second project whose pipelines should run)
+# Tokens: GitLab project access token, scope write_repository, role Developer or above.
 on:
   push:
     branches: [main]
@@ -17,17 +18,16 @@ jobs:
       - name: Push to the GitLab mirror
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          MIRROR_URL: ${{ vars.GITLAB_MIRROR_URL || 'https://gitlab.com/hanwg666/gitlab-autopilot.git' }}
+          MIRROR_URL: ${{ vars.GITLAB_MIRROR_URL }}
         run: |
-          if [ -z "$GITLAB_TOKEN" ]; then echo "GITLAB_TOKEN secret not set; skipping mirror"; exit 0; fi
+          if [ -z "$MIRROR_URL" ] || [ -z "$GITLAB_TOKEN" ]; then echo "GITLAB_MIRROR_URL or GITLAB_TOKEN not set; skipping mirror"; exit 0; fi
           TARGET="${MIRROR_URL#https://}"
           git push -o ci.skip "https://oauth2:${GITLAB_TOKEN}@${TARGET}" HEAD:main
-          # ci.skip: the history project's Free-tier CI quota is reserved; pipelines run in the showcase project
       - name: Push to the second GitLab project (showcase), when configured
         env:
           GITLAB_SHOWCASE_TOKEN: ${{ secrets.GITLAB_SHOWCASE_TOKEN }}
-          SHOWCASE_URL: ${{ vars.GITLAB_SHOWCASE_URL || 'https://gitlab.com/gitlab-ai-hackathon/transcend-october-2026/43190989/showcase.git' }}
+          SHOWCASE_URL: ${{ vars.GITLAB_SHOWCASE_URL }}
         run: |
-          if [ -z "$GITLAB_SHOWCASE_TOKEN" ]; then echo "GITLAB_SHOWCASE_TOKEN secret not set; skipping showcase mirror"; exit 0; fi
+          if [ -z "$SHOWCASE_URL" ] || [ -z "$GITLAB_SHOWCASE_TOKEN" ]; then echo "GITLAB_SHOWCASE_URL or GITLAB_SHOWCASE_TOKEN not set; skipping"; exit 0; fi
           TARGET="${SHOWCASE_URL#https://}"
           git push "https://oauth2:${GITLAB_SHOWCASE_TOKEN}@${TARGET}" HEAD:main
