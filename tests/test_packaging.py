@@ -106,6 +106,7 @@ def test_ci_template_does_not_set_the_project_version_variable():
     variables = doc["variables"]
     assert "AUTOPILOT_VERSION" not in variables
     from scripts import __version__ as own
+
     assert variables["AUTOPILOT_PACKAGE"].endswith(f"gitlab_autopilot-{own}-py3-none-any.whl")
     assert f"/v{own}/" in variables["AUTOPILOT_PACKAGE"]
     assert doc[".autopilot"]["before_script"] == ['pip install --quiet "$AUTOPILOT_PACKAGE"']
