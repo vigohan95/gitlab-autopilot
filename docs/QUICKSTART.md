@@ -105,7 +105,7 @@ depend on any of it: a verdict note from the reviewer agent is honoured when pre
 
 ```bash
 pip install gitlab-autopilot
-autopilot-policy --files src/app.py --lines 12 --json       # offline evaluation against ./AUTOPILOT.md
+autopilot-policy --files src/app.py --labels autopilot --lines 12 --json   # offline check against ./AUTOPILOT.md; exit 0 = allowed, 2 = held
 AUTOPILOT_TOKEN=... CI_PROJECT_ID=123 autopilot-policy --mr 7   # live, no note unless --comment
 autopilot-monitor --target production=https://your.app --retries 2 --backoff 5
 ```

@@ -40,4 +40,9 @@ jobs:
           pip install dist/*.whl
           autopilot-policy --help >/dev/null
           autopilot-release-notes --help >/dev/null
-          cd /tmp && cp "$GITHUB_WORKSPACE/templates/AUTOPILOT.md" . && autopilot-policy --files README.md --json
+          cd /tmp && cp "$GITHUB_WORKSPACE/templates/AUTOPILOT.md" .
+          # an ordinary change on a labelled MR is allowed (exit 0) ...
+          autopilot-policy --files src/app.py --labels autopilot --lines 12 --json
+          # ... a protected path is held for a human (exit 2)
+          set +e; autopilot-policy --files Dockerfile --labels autopilot --json; rc=$?; set -e
+          test "$rc" -eq 2
