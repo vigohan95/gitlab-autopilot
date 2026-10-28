@@ -1,6 +1,8 @@
-name: Publish to PyPI
-# Trusted publishing (no API token in secrets): on PyPI, add this repository as a trusted publisher for the
-# project "gitlab-autopilot" with workflow "publish.yml" and environment "pypi". Then pushing a tag v* publishes.
+name: Publish
+# On a tag v*: build, check, attach the wheel and sdist to the GitHub release (the CI template installs that wheel).
+# PyPI upload is opt-in: add this repository as a trusted publisher on PyPI (project "gitlab-autopilot", workflow
+# "publish.yml", environment "pypi"), then set the repository variable PYPI_PUBLISH=true and re-run this workflow
+# for the tag (Actions > Publish > Run workflow, choose the tag).
 on:
   push:
     tags: ["v*"]
@@ -17,12 +19,37 @@ jobs:
           python-version: "3.12"
       - run: pip install --disable-pip-version-check build twine
       - run: python -m build && twine check dist/*
+      - name: The tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          v=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])" 2>/dev/null || true)
+          [ -z "$v" ] && v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('scripts/__init__.py').read()).group(1))")
+          test "v$v" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} != package v$v"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: dist
           path: dist/
-  publish:
+  github-release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Attach the distribution to the release (creates the release if it does not exist)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes "See CHANGELOG.md"
+          gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
+  pypi:
+    needs: build
+    if: vars.PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
