@@ -10,12 +10,13 @@ All notable changes to this project are documented here. The format follows
 The first release meant to be installed by someone else.
 
 ### Added
-- `gitlab-autopilot` on PyPI: the CI scripts as the `gitlab_autopilot` package with console entry points
+- `gitlab-autopilot` as an installable package (wheel attached to the GitHub release; PyPI to follow): the CI scripts as the `gitlab_autopilot` package with console entry points
   (`autopilot-policy`, `autopilot-automerge`, `autopilot-review-approve`, `autopilot-release-notes`,
   `autopilot-journey-card`, `autopilot-receipts`, `autopilot-monitor`, `autopilot-incident`,
   `autopilot-rollback-ref`, `autopilot-deploy`, `autopilot-sci`, `autopilot-start-flow`, `autopilot-fetch-ref`,
   `autopilot-check-ci`, `autopilot-demo`). The modules still run as `python scripts/<name>.py` from a checkout.
-- `templates/Autopilot.gitlab-ci.yml`: one `include:` adds the policy gate, auto-merge, journey card, receipts
+- `templates/Autopilot.gitlab-ci.yml`: the jobs install the release pinned in `AUTOPILOT_PACKAGE`; the template
+  deliberately leaves `AUTOPILOT_VERSION` to your project (it is your release version). One `include:` adds the policy gate, auto-merge, journey card, receipts
   page, scheduled monitor, incident + rollback and audit trail to any GitLab project, using only the reserved
   `.pre` / `.post` stages.
 - `templates/AUTOPILOT.md`: a starter policy file with a generic `yaml autopilot-policy` block.

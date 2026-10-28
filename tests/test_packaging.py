@@ -47,7 +47,7 @@ def test_ci_template_uses_only_known_commands():
     assert {"autopilot-policy", "autopilot-automerge", "autopilot-incident", "autopilot-monitor"} <= used
     for job in jobs.values():  # reserved stages only: the adopter's stages list stays untouched
         assert job["stage"] in (".pre", ".post")
-    assert "AUTOPILOT_VERSION" in doc["variables"]
+    assert "AUTOPILOT_PACKAGE" in doc["variables"]
 
 
 def test_policy_file_resolves_from_cwd_then_env(tmp_path, monkeypatch):
@@ -97,3 +97,15 @@ def test_release_notes_version_sources(tmp_path, monkeypatch):
     assert release_notes.project_version() == "1.2.3"
     (tmp_path / "VERSION").unlink()
     assert release_notes.project_version()  # falls through to the pulse sample app, else the package itself
+
+
+def test_ci_template_does_not_set_the_project_version_variable():
+    """AUTOPILOT_VERSION is the adopting project's release version (autopilot-release-notes). The template must pin
+    its own package through AUTOPILOT_PACKAGE, or every adopter would release as the template's version."""
+    doc = yaml.safe_load((ROOT / "templates" / "Autopilot.gitlab-ci.yml").read_text(encoding="utf-8"))
+    variables = doc["variables"]
+    assert "AUTOPILOT_VERSION" not in variables
+    from scripts import __version__ as own
+    assert variables["AUTOPILOT_PACKAGE"].endswith(f"gitlab_autopilot-{own}-py3-none-any.whl")
+    assert f"/v{own}/" in variables["AUTOPILOT_PACKAGE"]
+    assert doc[".autopilot"]["before_script"] == ['pip install --quiet "$AUTOPILOT_PACKAGE"']

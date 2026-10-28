@@ -66,7 +66,7 @@ Touch a protected path (say `.gitlab-ci.yml`) in a second MR to see the hold, th
    deploy-production:
      stage: deploy
      before_script:
-       - pip install --quiet "gitlab-autopilot==0.2.0"
+       - pip install --quiet "$AUTOPILOT_PACKAGE"        # defined by the template
        - eval "$(autopilot-rollback-ref)"          # on rollback/<tag>/incident-<iid>: exports ROLLBACK_TO, INCIDENT_IID
      script:
        - ./deploy.sh "${ROLLBACK_TO:-$CI_COMMIT_SHA}"
@@ -104,7 +104,8 @@ depend on any of it: a verdict note from the reviewer agent is honoured when pre
 ## Running the scripts yourself
 
 ```bash
-pip install gitlab-autopilot
+pip install https://github.com/vigohan95/gitlab-autopilot/releases/download/v0.2.0/gitlab_autopilot-0.2.0-py3-none-any.whl
+# or, once it is on PyPI: pip install gitlab-autopilot
 autopilot-policy --files src/app.py --labels autopilot --lines 12 --json   # offline check against ./AUTOPILOT.md; exit 0 = allowed, 2 = held
 AUTOPILOT_TOKEN=... CI_PROJECT_ID=123 autopilot-policy --mr 7   # live, no note unless --comment
 autopilot-monitor --target production=https://your.app --retries 2 --backoff 5

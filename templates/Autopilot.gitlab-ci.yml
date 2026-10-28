@@ -27,7 +27,9 @@
 # Variables (set in Settings > CI/CD > Variables or override in your .gitlab-ci.yml)
 #   AUTOPILOT_TOKEN            required for anything that writes to GitLab (notes, labels, merges, incidents)
 #   AUTOPILOT_MONITOR_TARGETS  "production=https://... staging=https://..." for the scheduled monitor
-#   AUTOPILOT_VERSION          package version to install (pinned here to the template's own release)
+#   AUTOPILOT_PACKAGE          what the jobs pip-install (pinned to this template's release; once the package is on
+#                              PyPI, "gitlab-autopilot==0.2.0" works too)
+#   AUTOPILOT_VERSION          not set here on purpose: autopilot-release-notes reads it as YOUR project's version
 #   AUTOPILOT_PYTHON_IMAGE     image for the Autopilot jobs
 #   AUTOPILOT_F2_CONSUMER_ID   optional: the reviewer flow's consumer id (GitLab Duo Agent Platform)
 #   AUTOPILOT_REVIEW_WAIT      seconds auto-merge waits for Duo Code Review to post (§3.7); 0 disables
@@ -37,7 +39,7 @@
 # `eval "$(autopilot-rollback-ref)"` exports from the rollback/<tag>/incident-<iid> branch name (docs/QUICKSTART.md).
 
 variables:
-  AUTOPILOT_VERSION: "0.2.0"
+  AUTOPILOT_PACKAGE: "https://github.com/vigohan95/gitlab-autopilot/releases/download/v0.2.0/gitlab_autopilot-0.2.0-py3-none-any.whl"
   AUTOPILOT_PYTHON_IMAGE: "python:3.12-slim"
   AUTOPILOT_MONITOR_TARGETS: ""
   AUTOPILOT_REVIEW_WAIT: "300"
@@ -47,7 +49,7 @@ variables:
   image: $AUTOPILOT_PYTHON_IMAGE
   interruptible: true
   before_script:
-    - pip install --quiet "gitlab-autopilot==$AUTOPILOT_VERSION"
+    - pip install --quiet "$AUTOPILOT_PACKAGE"
 
 .autopilot_rules_app: &autopilot_rules_app
   - if: $ROLLBACK_TO
